@@ -43,6 +43,30 @@ async function publicCatalogue() {
   );
 }
 
+async function activeBookingsFor(personId: number) {
+  return query<any>(
+    `select s.id, s.discipline, s.starts_at, s.session_type, r.name as room_name
+       from enrolment e
+       join session s on s.id = e.session_id
+       join room r on r.id = s.room_id
+      where e.person_id = $1 and e.status = 'active'
+        and s.status <> 'cancelled' and s.starts_at >= now()
+      order by s.starts_at limit 10`,
+    [personId]
+  );
+}
+
+function bookingLabel(booking: any) {
+  const when = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(new Date(booking.starts_at));
+  return `#${booking.id} ${booking.discipline} on ${when} in ${booking.room_name}`;
+}
+
 async function replyForUser(message: string, user: CurrentUser | null, email?: string) {
   const lower = message.toLowerCase();
   const sessionId = sessionIdFrom(message);
@@ -72,7 +96,7 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
     }
   }
 
-  if (/(book|reserve|enrol)/.test(lower)) {
+  if (/\b(book|reserve|enrol|enroll)\b/.test(lower)) {
     if (!sessionId) return { answer: 'Tell me the session number you want, for example “book session 123”.' };
     if (user?.kind === 'admin') return { answer: 'Administrators can manage sessions from the dashboard. I do not impersonate another person to charge a booking.' };
     let personId = user?.id;
@@ -115,8 +139,14 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
   }
 
   if (/(cancel|drop)/.test(lower)) {
+    if (!user) return { answer: 'Sign in first so I can see your bookings. Then say “cancel session 123”.' };
+    if (user.kind === 'admin') return { answer: 'Administrators do not have participant bookings. Use the session desk to manage sessions.' };
     const sessionId = sessionIdFrom(message);
-    if (!sessionId || !user || !['participant', 'coach'].includes(user.kind)) return { answer: 'Tell me the session number and make sure you are signed in.' };
+    if (!sessionId) {
+      const bookings = await activeBookingsFor(user.id);
+      if (!bookings.length) return { answer: 'You have no active upcoming bookings to cancel.' };
+      return { answer: `Your active bookings are: ${bookings.map(bookingLabel).join('; ')}. Tell me the session number to cancel, for example “cancel session ${bookings[0].id}”.` };
+    }
     try {
       const result = await cancelBookingForPerson(user.id, sessionId);
       return { answer: `Booking cancelled. The account received ${result.refund} credits under the published cancellation policy.`, action: { type: 'booking_cancelled' } };

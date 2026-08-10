@@ -102,7 +102,7 @@ h3 { font-size: 1.3rem; }
 .button-cobalt, .button-coral { background: var(--plum); color: var(--cream); }
 .button:disabled { cursor: not-allowed; opacity: .5; transform: none; }
 
-.section { padding: 72px 0; }
+.section { padding: 72px 0; scroll-margin-top: 84px; }
 .section-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; margin-bottom: 28px; }
 .section-heading h2 { margin-bottom: 0; }
 .section-heading p { max-width: 42ch; margin-bottom: 0; color: var(--ink-soft); }
@@ -184,6 +184,7 @@ input, select, textarea { min-height: 44px; width: 100%; border: 1px solid var(-
 .auth-panel > p { color: var(--ink-soft); }
 .form-stack { display: grid; gap: 16px; margin-top: 26px; }
 .field { display: grid; gap: 7px; color: var(--ink-soft); font-size: .86rem; }
+.field-hint { color: var(--ink-soft); font-size: .76rem; }
 .form-error { padding: 10px 12px; border: 1px solid var(--poppy); background: var(--poppy-soft); color: #7e263d; }
 
 .dashboard-shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 58px 0 90px; }

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { type MouseEvent, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type User = { full_name: string; kind: 'admin' | 'coach' | 'participant'; credits: number };
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
@@ -9,12 +10,25 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:400
 export default function Header() {
   const [user, setUser] = useState<User | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
-    fetch(`${apiBaseUrl}/api/me`, { credentials: 'include' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then(setUser)
-      .catch(() => setUser(null));
+    let disposed = false;
+    const refreshUser = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/me`, { credentials: 'include', cache: 'no-store' });
+        if (!disposed) setUser(response.ok ? await response.json() : null);
+      } catch {
+        if (!disposed) setUser(null);
+      }
+    };
+
+    refreshUser();
+    window.addEventListener('atrium-auth-changed', refreshUser);
+    return () => {
+      disposed = true;
+      window.removeEventListener('atrium-auth-changed', refreshUser);
+    };
   }, []);
 
   async function signOut() {
@@ -25,6 +39,14 @@ export default function Header() {
 
   function closeMenu() {
     setMenuOpen(false);
+  }
+
+  function openDashboard(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    closeMenu();
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    router.push('/dashboard', { scroll: false });
   }
 
   return (
@@ -39,9 +61,9 @@ export default function Header() {
           <svg aria-hidden="true" viewBox="0 0 20 20"><path d={menuOpen ? 'M4 4 16 16M16 4 4 16' : 'M3 5h14M3 10h14M3 15h14'} /></svg>
         </button>
         <nav id="primary-navigation" className={`site-nav${menuOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
-          <Link href="/" onClick={closeMenu}>Sessions</Link>
+          <a href="/#sessions" onClick={closeMenu}>Sessions</a>
           <a href="/#policies" onClick={closeMenu}>Policies</a>
-          {user && <Link className="nav-link nav-link-action" href="/dashboard" onClick={closeMenu}>Dashboard</Link>}
+          {user && <Link className="nav-link nav-link-action" href="/dashboard" onClick={openDashboard}>Dashboard</Link>}
           <div className="mobile-nav-account">
             {user ? <button className="link-button" onClick={signOut}>Sign out</button> : <Link className="button button-small button-ink" href="/login" onClick={closeMenu}>Member sign in</Link>}
           </div>

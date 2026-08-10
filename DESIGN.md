@@ -34,6 +34,7 @@ Body copy uses a humanist sans fallback stack. Headings use a restrained book se
 - Fee schedule stays visible, while four policy details use progressive disclosure so the booking contract remains findable without becoming a wall of copy.
 - Dashboard shows personal bookings and cancellation/refund feedback. Coach and administrator desks support room booking, moving, cancelling, and attendee-aware management within API role boundaries.
 - Forms use semantic labels, visible focus, inline error blocks, explicit loading text, and keyboard-operable actions.
+- Public auth keeps one clear path from sign-in to participant signup; a successful signup starts a session so the next action is booking, not another credential screen.
 
 ## Responsive behavior
 

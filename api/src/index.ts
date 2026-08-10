@@ -1,7 +1,7 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import { login, logout, me, requireSession } from './auth';
+import { login, logout, me, requireSession, signup } from './auth';
 import sessionRoutes from './routes/sessions';
 import roomRoutes from './routes/rooms';
 import peopleRoutes from './routes/people';
@@ -25,6 +25,7 @@ app.use(express.json({ limit: '64kb' }));
 app.use(cookieParser());
 
 app.post('/api/login', login);
+app.post('/api/signup', signup);
 app.post('/api/logout', logout);
 app.get('/api/me', requireSession, me);
 app.get('/api/health', (_req, res) => res.json({ ok: true }));

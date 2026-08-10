@@ -150,6 +150,54 @@ export async function login(req: Request, res: Response): Promise<void> {
   }
 }
 
+export async function signup(req: Request, res: Response): Promise<void> {
+  const fullName = typeof req.body?.full_name === 'string' ? req.body.full_name.trim() : '';
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+
+  if (fullName.length < 2 || fullName.length > 120) {
+    res.status(400).json({ error: 'Enter a name between 2 and 120 characters.' });
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    res.status(400).json({ error: 'Enter a valid email address.' });
+    return;
+  }
+  if (password.length < 8 || password.length > 200) {
+    res.status(400).json({ error: 'Use a password between 8 and 200 characters.' });
+    return;
+  }
+
+  try {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const person = await withTransaction(async (client) => {
+      const inserted = await client.query<CurrentUser>(
+        `insert into person (email, password_hash, full_name, kind, credits, active, created_at)
+         values ($1, $2, $3, 'participant', 4000, true, now())
+         returning id, email, full_name, kind, credits, active`,
+        [email, hashPassword(password), fullName]
+      );
+      const created = inserted.rows[0];
+      await client.query(
+        `insert into app_session (person_id, token_hash, expires_at)
+         values ($1, $2, now() + interval '12 hours')`,
+        [created.id, sessionTokenHash(token)]
+      );
+      return created;
+    });
+
+    setSessionCookie(res, token);
+    res.status(201).json({ id: person.id, email: person.email, full_name: person.full_name, kind: person.kind });
+  } catch (err: any) {
+    if (err?.code === '23505') {
+      res.status(409).json({ error: 'An account with that email already exists. Sign in or reset your password.' });
+      return;
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Could not create your account. Try again in a moment.' });
+  }
+}
+
 export async function logout(req: Request, res: Response): Promise<void> {
   const token = req.cookies?.[SESSION_COOKIE];
   if (token) await query('delete from app_session where token_hash = $1', [sessionTokenHash(token)]);
