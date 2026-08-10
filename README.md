@@ -41,6 +41,26 @@ npm run dev:web
 
 Open `http://localhost:3000`.
 
+## Screenshots
+
+These captures show the current local interface from first visit through account creation and session discovery.
+
+### Public landing page
+
+![Atrium public landing page](docs/screenshots/public-board.png)
+
+### Upcoming sessions board
+
+![Upcoming sessions board with live places, credits, rooms, and booking actions](docs/screenshots/sessions-board.png)
+
+### Booking policies
+
+![Booking policies and fee schedule](docs/screenshots/policies.png)
+
+### Participant signup
+
+![Participant signup form](docs/screenshots/signup.png)
+
 The seeded administrator is `admin@atrium.local` with the password configured by `SEED_ADMIN_PASSWORD` (the starter default is `admin`). Seeded coaches and participants have legacy hashes but no published plaintext credentials; use the password setup flow with their seed email while `MAIL_TRANSPORT=console` and take the token from the API log. New participants can create an account directly at `/signup` with 4000 starting credits. The assistant can also create a new participant account during a guest booking and send a secure password setup link through the configured mail transport; existing email addresses must sign in.
 
 The public session board is usable without the assistant: anonymous visitors sign in, signed-in participants and coaches can book or cancel directly, and the dashboard shows their own bookings and refund result. Coaches and administrators use the session desk to create, move, and cancel sessions; the API still enforces ownership and role boundaries.
