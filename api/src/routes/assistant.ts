@@ -32,14 +32,23 @@ function moveTarget(message: string) {
   return match ? { date: match[1], time: match[2].padStart(5, '0') } : null;
 }
 
-async function publicCatalogue() {
+const assistantDisciplines = ['fitness', 'mindfulness', 'financial', 'lifestyle'] as const;
+
+function disciplineFrom(message: string) {
+  return assistantDisciplines.find((discipline) => new RegExp(`\\b${discipline}\\b`, 'i').test(message)) || null;
+}
+
+async function publicCatalogue(discipline: string | null = null) {
+  const disciplineFilter = discipline ? ' and s.discipline = $1' : '';
+  const params = discipline ? [discipline] : [];
   return query<any>(
     `select s.id, s.discipline, s.session_type, s.starts_at, s.ends_at, r.name as room_name,
             r.capacity - count(e.id) filter (where e.status = 'active')::int as places_remaining,
             s.seat_fee_credits
        from session s join room r on r.id = s.room_id left join enrolment e on e.session_id = s.id
-      where s.status <> 'cancelled' and s.starts_at >= now() and s.starts_at < now() + interval '14 days'
-      group by s.id, r.id order by s.starts_at limit 20`
+      where s.status <> 'cancelled' and s.starts_at >= now() and s.starts_at < now() + interval '14 days'${disciplineFilter}
+      group by s.id, r.id order by s.starts_at limit 20`,
+    params
   );
 }
 
@@ -138,6 +147,14 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
     }
   }
 
+  if (/\b(bookings?|reservations?)\b/.test(lower) && !/(cancel|drop)/.test(lower)) {
+    if (!user) return { answer: 'Sign in to see your upcoming bookings.' };
+    if (user.kind === 'admin') return { answer: 'Administrators do not have participant bookings. Use the session desk to manage sessions.' };
+    const bookings = await activeBookingsFor(user.id);
+    if (!bookings.length) return { answer: 'You have no active upcoming bookings.' };
+    return { answer: `Your active bookings are: ${bookings.map(bookingLabel).join('; ')}.` };
+  }
+
   if (/(cancel|drop)/.test(lower)) {
     if (!user) return { answer: 'Sign in first so I can see your bookings. Then say “cancel session 123”.' };
     if (user.kind === 'admin') return { answer: 'Administrators do not have participant bookings. Use the session desk to manage sessions.' };
@@ -176,7 +193,8 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
     return { answer: `The centre currently has ${rows.map((row) => `${row.count} ${row.kind}s`).join(', ')}.` };
   }
 
-  const sessions = await publicCatalogue();
+  const discipline = disciplineFrom(message);
+  const sessions = await publicCatalogue(discipline);
   if (!sessions.length) return { answer: 'There are no upcoming sessions in the next 14 days.' };
   return {
     answer: `I found ${sessions.length} upcoming sessions. Ask about a discipline, or say “book session ${sessions[0].id}”${user ? '' : ' with an email address'}.`,
