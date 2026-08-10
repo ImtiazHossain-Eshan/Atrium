@@ -26,3 +26,7 @@ Thumbs.db
 # typescript / next generated
 *.tsbuildinfo
 next-env.d.ts
+
+
+# Local design tooling
+.impeccable/

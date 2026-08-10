@@ -65,8 +65,20 @@ The seeded administrator is `admin@atrium.local` with the password configured by
 
 The public session board is usable without the assistant: anonymous visitors sign in, signed-in participants and coaches can book or cancel directly, and the dashboard shows their own bookings and refund result. Coaches and administrators use the session desk to create, move, and cancel sessions; the API still enforces ownership and role boundaries.
 
-## Verification
+## Assistant question examples
 
+The Assistant supports related questions through the same permission-aware flow:
+
+- Public schedule: `What sessions have places left?`
+- Discipline filter: `Show upcoming fitness sessions` or `What mindfulness sessions are available?`
+- Visitor booking guidance: `Book session 42`, followed by an email address when needed.
+- Participant account questions: `What is my balance?`, `What are my bookings?`, or `Cancel a booking` after signing in.
+- Coach actions: `Cancel session 42`, `Move session 42 to 2026-08-20 14:00`, or review attendance for an owned session.
+- Administrator questions: ask for a people or attendance overview from the administrator dashboard.
+
+Personal balance, booking, cancellation, coach, and administrator details remain role-protected. Anonymous users receive guidance to sign in when a question needs private information.
+
+## Verification
 ```bash
 npm test
 npm run build
