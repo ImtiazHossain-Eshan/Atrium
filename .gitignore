@@ -1,0 +1,28 @@
+.env
+.env.*
+!env.example
+
+# Submission-only assignment materials
+assignment/
+instructions/
+INSTRUCTIONS.md
+**/AGENTS.md
+**/*instructions*.md
+
+node_modules/
+dist/
+build/
+.next/
+out/
+
+*.log
+npm-debug.log*
+coverage/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# typescript / next generated
+*.tsbuildinfo
+next-env.d.ts
