@@ -23,7 +23,7 @@ createdb atrium
 copy env.example .env
 ```
 
-Set `DATABASE_URL` and replace `SESSION_SECRET`. On Windows, the `psql` tools may be installed under `C:\Program Files\PostgreSQL\17\bin` even when they are not on `PATH`.
+Set `DATABASE_URL` and replace `SESSION_SECRET`. For a local run without Mailpit or another SMTP server, set `MAIL_TRANSPORT=console` in `.env`; the provided `env.example` shows the SMTP configuration for Mailpit on port 1025. On Windows, the `psql` tools may be installed under `C:\Program Files\PostgreSQL\17\bin` even when they are not on `PATH`.
 
 3. Install and migrate:
 
@@ -41,7 +41,7 @@ npm run dev:web
 
 Open `http://localhost:3000`.
 
-The seeded administrator is `admin@atrium.local` with the password configured by `SEED_ADMIN_PASSWORD` (the starter default is `admin`). Seeded coaches and participants have legacy hashes but no published plaintext credentials; use the password setup flow with their seed email while `MAIL_TRANSPORT=console` and take the token from the API log. New visitor accounts receive the same secure setup link after a first booking.
+The seeded administrator is `admin@atrium.local` with the password configured by `SEED_ADMIN_PASSWORD` (the starter default is `admin`). Seeded coaches and participants have legacy hashes but no published plaintext credentials; use the password setup flow with their seed email while `MAIL_TRANSPORT=console` and take the token from the API log. New participants can create an account directly at `/signup` with 4000 starting credits. The assistant can also create a new participant account during a guest booking and send a secure password setup link through the configured mail transport; existing email addresses must sign in.
 
 The public session board is usable without the assistant: anonymous visitors sign in, signed-in participants and coaches can book or cancel directly, and the dashboard shows their own bookings and refund result. Coaches and administrators use the session desk to create, move, and cancel sessions; the API still enforces ownership and role boundaries.
 
