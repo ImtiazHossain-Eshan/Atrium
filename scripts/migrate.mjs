@@ -43,7 +43,7 @@ try {
   await client.connect();
 } catch (err) {
   console.error(`Could not connect using DATABASE_URL: ${err.message}`);
-  console.error('Is PostgreSQL running, and does the database exist? See INSTRUCTIONS.md.');
+  console.error('Is PostgreSQL running, and does the database exist? See the Setup section of README.md.');
   process.exit(1);
 }
 

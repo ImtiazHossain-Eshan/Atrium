@@ -91,9 +91,28 @@ export async function getUserFromRequest(req: Request): Promise<CurrentUser | nu
   return users[0];
 }
 
+/**
+ * Resolves the caller when there is one and continues either way.
+ *
+ * Routes that are readable anonymously but answer differently to a signed-in
+ * caller need this: without it `res.locals.user` is never set on those routes
+ * and every caller is treated as a stranger.
+ */
+export async function attachUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (res.locals.user === undefined) {
+      res.locals.user = (await getUserFromRequest(req)) ?? null;
+    }
+  } catch (err) {
+    console.error(err);
+    res.locals.user = null;
+  }
+  next();
+}
+
 export async function requireSession(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const user = await getUserFromRequest(req);
+    const user = (res.locals.user as CurrentUser | null | undefined) ?? (await getUserFromRequest(req));
     if (!user) {
       res.status(401).json({ error: 'not signed in' });
       return;
@@ -132,12 +151,15 @@ export async function login(req: Request, res: Response): Promise<void> {
       [email]
     );
     const person = people[0];
-    if (!person || !person.active || !verifyPassword(password, person.password_hash).valid) {
+    // One verification, not two: scrypt at these parameters is deliberately
+    // expensive, and calling it twice doubles the cost of every sign-in.
+    const check = person ? verifyPassword(password, person.password_hash) : { valid: false, legacy: false };
+    if (!person || !person.active || !check.valid) {
       res.status(401).json({ error: 'email or password is incorrect' });
       return;
     }
 
-    if (verifyPassword(password, person.password_hash).legacy) {
+    if (check.legacy) {
       await query('update person set password_hash = $1 where id = $2', [hashPassword(password), person.id]);
     }
 

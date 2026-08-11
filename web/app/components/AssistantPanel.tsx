@@ -1,31 +1,85 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
+const timezone = 'America/New_York';
+
+type AssistantSession = {
+  id: number;
+  discipline: string;
+  session_type: string;
+  starts_at: string;
+  ends_at: string;
+  room_name: string;
+  capacity: number;
+  places_remaining: number;
+  seat_fee_credits: number;
+};
+
+type Turn = {
+  role: 'you' | 'assistant';
+  text: string;
+  sessions?: AssistantSession[];
+};
+
+function when(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(new Date(value));
+}
+
+const openingTurn: Turn = {
+  role: 'assistant',
+  text:
+    'Ask me what is running, when, and what it costs. Sign in and I can also report your balance, take a booking, or cancel one. ' +
+    'I answer as whoever is signed in, so the same question gets a different answer for a visitor, a participant and a coach.'
+};
 
 export default function AssistantPanel() {
+  const [turns, setTurns] = useState<Turn[]>([openingTurn]);
   const [message, setMessage] = useState('');
   const [email, setEmail] = useState('');
-  const [answer, setAnswer] = useState('Ask about sessions, your balance, or say “book session 123”.');
+  const [needsEmail, setNeedsEmail] = useState(false);
   const [busy, setBusy] = useState(false);
+  const transcriptEnd = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    transcriptEnd.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [turns, busy]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!message.trim()) return;
+    const asked = message.trim();
+    if (!asked || busy) return;
+
+    setTurns((current) => [...current, { role: 'you', text: asked }]);
+    setMessage('');
     setBusy(true);
+
     try {
       const response = await fetch(`${apiBaseUrl}/api/assistant`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ message, email: email || undefined })
+        body: JSON.stringify({ message: asked, email: email || undefined })
       });
       const payload = await response.json();
-      setAnswer(payload.answer || payload.error || 'I could not find an answer.');
-      setMessage('');
+      const answer = payload.answer || payload.error || 'I could not find an answer to that.';
+      // The visitor-booking path asks for an address only when it needs one,
+      // rather than showing an email box to everyone from the start.
+      setNeedsEmail(/email address/i.test(answer));
+      setTurns((current) => [...current, { role: 'assistant', text: answer, sessions: payload.sessions }]);
     } catch {
-      setAnswer('The assistant is offline right now. You can still browse the session list or sign in.');
+      setTurns((current) => [
+        ...current,
+        { role: 'assistant', text: 'The assistant is offline right now. You can still browse the session board or sign in.' }
+      ]);
     } finally {
       setBusy(false);
     }
@@ -36,15 +90,69 @@ export default function AssistantPanel() {
       <div className="assistant-copy">
         <span className="section-mark">Atrium assistant</span>
         <h2 id="assistant-heading">A useful answer, from the right point of view.</h2>
-        <p>Ask anonymously about upcoming sessions. Sign in when you need your balance, bookings, or coach-level detail.</p>
+        <p>Ask anonymously about upcoming sessions. Sign in when you need your balance, your bookings, or coach-level detail.</p>
       </div>
-      <div className="assistant-conversation" aria-live="polite"><span className="assistant-label">Response</span><p>{busy ? 'Checking the live schedule…' : answer}</p></div>
+
+      <div className="assistant-conversation" aria-live="polite" aria-busy={busy}>
+        {turns.map((turn, index) => (
+          <div key={index} className={`assistant-turn assistant-turn-${turn.role}`}>
+            <span className="assistant-label">{turn.role === 'you' ? 'You' : 'Atrium'}</span>
+            <p>{turn.text}</p>
+            {turn.sessions && turn.sessions.length > 0 && (
+              <ul className="assistant-sessions">
+                {turn.sessions.slice(0, 8).map((session) => (
+                  <li key={session.id} className="assistant-session">
+                    <span className="assistant-session-when">{when(session.starts_at)}</span>
+                    <span className="assistant-session-what">
+                      <strong>#{session.id} {session.discipline}</strong>
+                      <em>{session.room_name} · {session.session_type}</em>
+                    </span>
+                    <span className="assistant-session-places">
+                      <strong>{session.places_remaining}</strong>
+                      <em>of {session.capacity} left · {session.seat_fee_credits} cr</em>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+        {busy && (
+          <div className="assistant-turn assistant-turn-assistant">
+            <span className="assistant-label">Atrium</span>
+            <p>Checking the live schedule…</p>
+          </div>
+        )}
+        <div ref={transcriptEnd} />
+      </div>
+
       <form className="assistant-form" onSubmit={submit}>
         <label className="sr-only" htmlFor="assistant-message">Your question</label>
-        <input id="assistant-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="e.g. What sessions have places left?" disabled={busy} />
-        <label className="sr-only" htmlFor="assistant-email">Email for a new visitor booking</label>
-        <input id="assistant-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email only if booking as a visitor" disabled={busy} />
-        <button className="button button-plum" disabled={busy || !message.trim()}>{busy ? 'Working…' : 'Ask assistant'}</button>
+        <input
+          id="assistant-message"
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          placeholder="e.g. What sessions have places left?"
+          disabled={busy}
+          autoComplete="off"
+        />
+        {needsEmail && (
+          <>
+            <label className="sr-only" htmlFor="assistant-email">Email address for a new account</label>
+            <input
+              id="assistant-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="Your email address"
+              disabled={busy}
+              autoComplete="email"
+            />
+          </>
+        )}
+        <button className="button button-plum" disabled={busy || !message.trim()}>
+          {busy ? 'Working…' : 'Ask assistant'}
+        </button>
       </form>
     </section>
   );

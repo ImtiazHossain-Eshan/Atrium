@@ -44,6 +44,6 @@ The public composition becomes one column at 800px. Session boards preserve the 
 
 The schedule print has one authored floating moment and the hero copy has a short entrance on fine pointers. Reduced-motion users receive the same visible geometry without animation. Booking, cancellation, move, loading, error, empty, and permission states are text-labelled and keyboard-operable.
 
-## Finish review
+## Review notes
 
-The direction seed is `bf581493`, assigned index `6`. The contract is recorded in the first child of `body` in `web/app/layout.tsx`. The public page was reviewed for the mobile border-spacing issue, the former blue palette, the overly dense policy copy, the flat session list, direct booking/cancellation actions, and the role-aware management paths.
+The public page was reviewed for the mobile border-spacing issue, the former blue palette, the overly dense policy copy, the flat session list, direct booking and cancellation actions, and the role-aware management paths. The calendar distinguishes a coach's own sessions from other coaches' busy periods by weight rather than by colour alone, so the distinction survives a greyscale print and a colour-vision difference.
