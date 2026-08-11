@@ -77,13 +77,6 @@ async function publicCatalogue(discipline: string | null = null, withPlacesOnly 
   return filtered.slice(0, 20);
 }
 
-function catalogueLine(session: any) {
-  return (
-    `#${session.id} · ${session.discipline} (${session.session_type}) · ${centreDateTime(session.starts_at)} · ` +
-    `${session.room_name} · ${session.places_remaining} of ${session.capacity} places left · ${session.seat_fee_credits} credits`
-  );
-}
-
 async function activeBookingsFor(personId: number) {
   return query<any>(
     `select s.id, s.discipline, s.starts_at, s.session_type, r.name as room_name
@@ -339,18 +332,22 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
     return { answer: nothing };
   }
 
-  const shown = sessions.slice(0, 8);
-  const heading =
-    `${sessions.length} ${discipline ? discipline + ' ' : ''}session(s)` +
-    `${placesOnly ? ' with places left' : ''} in the next 14 days. Times are ${CENTRE_TIMEZONE}.`;
-  const more = sessions.length > shown.length ? `\n…and ${sessions.length - shown.length} more.` : '';
+  // The prose says what was found; the rows below it say what they are. Putting
+  // the listing in both places gave the panel the same information twice, once
+  // as a wall of text and once as a table.
+  const SHOWN = 8;
+  const subject = `${discipline ? discipline + ' ' : ''}session${sessions.length === 1 ? '' : 's'}`;
+  const found =
+    sessions.length > SHOWN
+      ? `I found ${sessions.length} ${subject}${placesOnly ? ' with places left' : ''} in the next 14 days. Here are the first ${SHOWN}, soonest first.`
+      : `Here ${sessions.length === 1 ? 'is' : 'are'} the ${sessions.length} ${subject}${placesOnly ? ' with places left' : ''} in the next 14 days.`;
   const next = user
-    ? `\n\nSay “book session ${sessions[0].id}” and I will take the place from your account.`
-    : `\n\nSay “book session ${sessions[0].id}” with your email address and I will create your account and send a password setup link.`;
+    ? `Say “book session ${sessions[0].id}” and I will take the place from your account.`
+    : `Say “book session ${sessions[0].id}” with your email address and I will create your account and send a password setup link.`;
 
   return {
-    answer: `${heading}\n\n${shown.map(catalogueLine).join('\n')}${more}${next}`,
-    sessions: sessions.map((session) => ({
+    answer: `${found} Times are ${CENTRE_TIMEZONE}.\n\n${next}`,
+    sessions: sessions.slice(0, SHOWN).map((session) => ({
       id: session.id,
       discipline: session.discipline,
       session_type: session.session_type,
