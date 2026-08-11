@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import app from '../src/index';
+import { query } from '../src/db';
 import { bookSessionForPerson } from '../src/services/bookings';
 import { cleanup, closePool, databaseAvailable, dbIt, makePerson, makeRoom, makeSession, slotAt } from './fixtures';
 
@@ -299,6 +300,22 @@ describe('access control across the API', () => {
 
     const still = await call('/api/bookings', { cookie });
     assert.deepEqual(still.body, []);
+  });
+
+  dbIt('issues a new participant their opening credits', async () => {
+    const email = `atrium-test-signup-${process.pid}-${Date.now()}@example.invalid`;
+    const created = await call('/api/signup', {
+      method: 'POST',
+      body: { full_name: 'atrium-test signup', email, password: 'signup-password-1' }
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.kind, 'participant', 'signup never creates a coach or an administrator');
+
+    const me = await call('/api/me', { cookie: created.cookie });
+    assert.equal(me.body.credits, 4000, 'participants are issued 4000 on account creation');
+    assert.ok(Number.isInteger(me.body.credits));
+
+    await query('delete from person where lower(email) = lower($1)', [email]);
   });
 
   dbIt('ends a session when the caller signs out', async () => {

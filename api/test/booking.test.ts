@@ -324,6 +324,63 @@ describe('booking, cancellation and refunds', () => {
     );
   });
 
+  dbIt('releases the room when a session is cancelled', async () => {
+    const first = await makePerson('coach', 2000);
+    const second = await makePerson('coach', 2000);
+    const room = await makeRoom(4);
+    const slot = slotAt(16, '09:00');
+
+    const original = await makeSession({ roomId: room.id, coachId: first.id, startsAt: slot.startsAt, endsAt: slot.endsAtAfter(60) });
+
+    // While it stands, the slot is taken.
+    await assert.rejects(
+      () =>
+        createSession(
+          { id: second.id, kind: 'coach' },
+          { roomId: room.id, coachId: second.id, discipline: 'fitness', sessionType: 'standard', startsAt: slot.startsAt, endsAt: slot.endsAtAfter(60) }
+        ),
+      (err: DomainError) => err.code === 'room_conflict'
+    );
+
+    await cancelSession(original.id, { id: first.id, kind: 'coach' });
+
+    // A cancelled session stops counting against everything, so the same room
+    // and the same interval are free again.
+    const replacement = await createSession(
+      { id: second.id, kind: 'coach' },
+      { roomId: room.id, coachId: second.id, discipline: 'fitness', sessionType: 'standard', startsAt: slot.startsAt, endsAt: slot.endsAtAfter(60) }
+    );
+    assert.ok(replacement.id);
+    assert.notEqual(replacement.id, original.id);
+  });
+
+  dbIt('keeps credits as whole numbers through a part-refund', async () => {
+    const coach = await makePerson('coach', 2000);
+    const participant = await makePerson('participant', 4000);
+    const room = await makeRoom(4);
+
+    // 30 hours out is the 25% tier. A 15-credit place returns floor(3.75) = 3.
+    const startsAt = new Date(Date.now() + 30 * 3600 * 1000).toISOString();
+    const session = await makeSession({
+      roomId: room.id,
+      coachId: coach.id,
+      startsAt,
+      endsAt: new Date(new Date(startsAt).getTime() + 45 * 60000).toISOString(),
+      sessionType: 'short',
+      seatFee: 15
+    });
+
+    await bookSessionForPerson(participant.id, session.id);
+    const result = await cancelBookingForPerson(participant.id, session.id);
+
+    assert.equal(result.refundPercent, 0.25);
+    assert.equal(result.refund, 3, 'rounds down, never to 3.75 and never up to 4');
+    assert.ok(Number.isInteger(result.refund));
+    const balance = await creditsOf(participant.id);
+    assert.ok(Number.isInteger(balance));
+    assert.equal(balance, 4000 - 15 + 3);
+  });
+
   dbIt('records every credit movement in the ledger', async () => {
     const coach = await makePerson('coach', 2000);
     const participant = await makePerson('participant', 4000);

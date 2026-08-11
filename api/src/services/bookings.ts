@@ -1,5 +1,5 @@
 import { query, withTransaction } from '../db';
-import { hoursOfNotice, refundAmount, refundPercent } from '../credits';
+import { OPENING_CREDITS, hoursOfNotice, refundAmount, refundPercent } from '../credits';
 import { DomainError } from './sessions';
 import { findPersonConflict } from './conflicts';
 
@@ -127,9 +127,9 @@ export async function createVisitorParticipant(email: string, fullName = 'New At
 
   const inserted = await query<any>(
     `insert into person (email, password_hash, full_name, kind, credits, active, created_at)
-     values ($1, null, $2, 'participant', 4000, true, now())
+     values ($1, null, $2, 'participant', $3, true, now())
      returning id, email, full_name, kind, credits, active`,
-    [email, fullName]
+    [email, fullName, OPENING_CREDITS.participant]
   );
   return { ...inserted[0], created: true };
 }

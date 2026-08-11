@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { Request, Response, NextFunction } from 'express';
 import { query, withTransaction } from './db';
+import { OPENING_CREDITS } from './credits';
 
 export type Role = 'admin' | 'coach' | 'participant';
 export type CurrentUser = {
@@ -195,9 +196,9 @@ export async function signup(req: Request, res: Response): Promise<void> {
     const person = await withTransaction(async (client) => {
       const inserted = await client.query<CurrentUser>(
         `insert into person (email, password_hash, full_name, kind, credits, active, created_at)
-         values ($1, $2, $3, 'participant', 4000, true, now())
+         values ($1, $2, $3, 'participant', $4, true, now())
          returning id, email, full_name, kind, credits, active`,
-        [email, hashPassword(password), fullName]
+        [email, hashPassword(password), fullName, OPENING_CREDITS.participant]
       );
       const created = inserted.rows[0];
       await client.query(

@@ -70,7 +70,7 @@ npm test
 npm run build
 ```
 
-42 tests pass: 19 pure-logic tests covering password hashing, the fee schedule, refund tiers, session shapes, opening hours and the daylight-saving arithmetic, and 23 database-backed tests covering the booking rules and the access-control matrix at the API. The database-backed files run one at a time because they share a database; they skip rather than fail if `DATABASE_URL` is unreachable, and clean up everything they create.
+60 tests pass: 19 pure-logic tests covering password hashing, the fee schedule, refund tiers, session shapes, opening hours and the daylight-saving arithmetic, and 41 database-backed tests covering the booking rules, the access-control matrix at the API, and the assistant's tool selection and refusals. The database-backed files run one at a time because they share a database; they skip rather than fail if `DATABASE_URL` is unreachable, and clean up everything they create.
 
 ---
 
@@ -194,6 +194,9 @@ These survived the first hardening pass and were found by auditing the data rath
 - **A question naming somebody else's balance answered with the caller's own.** The generic balance branch matched before the administrator lookup, so "what is the balance for sofia@…" returned the administrator's own figure. Ordered correctly; a participant asking the same question still gets their own balance and never another account's.
 - **A compound question got half an answer.** "What is my balance and what are my bookings?" matched the bookings branch and dropped the balance. Both parts are answered when both are asked.
 - **The policy accordion dropped its toggle onto a row of its own.** `summary` was a two-column grid with three items (title, meta, and the `+`/`−` from `::after`), so the indicator wrapped and read as a stray dash under every open section.
+- **A refused question was answered by changing the subject.** A participant asking who is attending a session got the public listing back with no explanation, so an enforced rule looked like the assistant misunderstanding the question. Every caller who is not entitled to the attendee list is now told so in the first sentence, and then given what they can have. The two refusals differ because the reasons differ: a coach is told it applies to their own sessions only, everyone else is told the list belongs to the coach and the administrator.
+- **"My sessions" returned everyone's sessions.** A coach asking for their own schedule, and a participant asking for theirs, both fell through to the public catalogue. The phrase means different things to the two roles, so it now resolves per caller: a coach gets what they teach, upcoming or past, with places taken; a participant gets the places they hold. An anonymous caller is asked to sign in rather than handed the catalogue.
+- **Naming a session got you the whole catalogue.** "Session 15 details" matched no intent and fell through to the generic listing, so a question about one session came back as twenty unrelated ones. A named session is now answered as a question about that session: what it is, when, where, places left and price. That projection is public board data, so it is safe for any caller; attendee-level detail stays where it was, with the owning coach and the administrator.
 - **The assistant printed its catalogue twice.** The answer text carried the full listing *and* the panel rendered the same sessions as rows underneath, so a simple question came back as a wall of text followed by a table of the same thing. The prose now says what was found; the rows say what they are.
 - **The session rows collapsed at phone width.** A fixed 150px date column left the discipline about eighteen pixels to wrap into, tripling the row height. They stack below 560px.
 - **Loading the public page scrolled the visitor down it.** The assistant transcript kept its newest message in view with `scrollIntoView`, which scrolls *every* scrollable ancestor including the document, and the effect also ran on mount, so simply opening the page dragged the window down to wherever the panel sat. It sets `scrollTop` on the transcript box instead, so nothing outside that box moves. The guard is on the transcript growing rather than on a first-run flag, because React mounts effects twice in development and a flag does not survive that.
@@ -285,6 +288,30 @@ The rule of thumb is that anything expressible as a property of rows belongs in 
 
 ---
 
+## Section 5 conformance
+
+Every domain rule is checked twice: as a query over the live data, which proves no existing row breaks it, and as a test that tries to break it through the application, which proves a new write cannot. The data check alone would only show the seed happens to be clean.
+
+| Rule | Enforced by | Data | Test that tries to break it |
+| --- | --- | ---: | --- |
+| 45 / 60 / 210-minute holds | `validateSessionWindow` | 0 | *each session type must hold the room for its own duration* |
+| Nobody in an intensive is booked elsewhere during it, including the interval | falls out of the overlap test, because the hold is one contiguous 210 minutes | 0 | *keeps an intensive lunch interval clear for everyone involved* |
+| Half-open: touching sessions do not conflict | `tstzrange(..., '[)')`, and `a.start < b.end and b.start < a.end` | 0 false conflicts | *allows a booking that begins exactly as another ends* |
+| One room, one session | exclusion constraint | 0 | *refuses a room double-booking at the database, not only in the service* |
+| No person holds two overlapping commitments | one predicate over teaching and attending, under an advisory lock | 0 | *refuses two overlapping commitments for the same person* |
+| Inside opening hours, on an open day | `isOpenWindow`, in centre time | 0 | *the centre is closed on Sundays*, *a session must fit entirely inside opening hours* |
+| Capacity counts participants, excludes the coach | count of active enrolments against `room.capacity` | 0 | *refuses a place once the room is full*, in a room of one, which the coach would fill if he counted |
+| A coach may not enrol in their own session | trigger, plus the service | 0 | *refuses a coach enrolling in their own session* |
+| A cancelled session releases its room and stops counting | every predicate carries `status <> 'cancelled'` | 0 | *releases the room when a session is cancelled* |
+| Credits are integers, never floating point | column types after migration `002`, and `floor` on every refund | 0 non-integer columns | *keeps credits as whole numbers through a part-refund* |
+| Balances never go negative | `check (credits >= 0)` and a conditional debit | 0 | *refuses a booking the account cannot pay for and charges nothing* |
+| 4000 to a participant on creation | `OPENING_CREDITS` in `credits.ts` | grants are creation-time, see below | *issues a new participant their opening credits* |
+| Fees match the published schedule | `credits.ts` | 0 | *the fee schedule follows the session type* |
+| No refund exceeds its charge | `check (credits_refunded <= credits_charged)` | 0 | *records every credit movement in the ledger* |
+| Refunds round in one deliberate direction | `refundAmount` uses `floor` | n/a | *a refund of part of a credit*, and the part-refund test above |
+
+The two opening grants are creation-time behaviour rather than a standing invariant, since a balance is spent from the moment the account is used. They live in one place, `OPENING_CREDITS` in `credits.ts`, and are applied by both creation paths: `/signup` and the assistant's visitor booking. Only participants are created by the application; coaches arrive with the seed. The coach figure is carried in the same constant so a coach-creation route added later cannot invent its own.
+
 ## Concurrency and isolation
 
 Every write path runs at PostgreSQL's default **`READ COMMITTED`**.
@@ -321,6 +348,30 @@ Two implementation points matter more than the list:
 **The assistant has no privileged path.** Every answer comes from a tool that runs a query already scoped to the caller. There is no filtering step after the fact and no instruction in a prompt asking the model to be careful, because the model never receives anything wider than the answer. When `MODEL_PROVIDER=ollama`, the model is handed the finished answer to rephrase and nothing else: not the caller's identity beyond a role name, and not the rows behind the answer. Prompt injection through stored data has nothing to reach: a discipline name or a participant's own name cannot widen a `where person_id = $1`.
 
 `api/test/access.test.ts` asserts this over HTTP: the anonymous 401 wall, a participant who cannot see a co-attendee's name or email anywhere in any response, a body claiming `kind: "admin"` changing nothing, a coach seeing their own attendees but only a busy period for a peer's session, three injection attempts returning nothing privileged, and a signed-out token that stops working server-side.
+
+### How the assistant is built
+
+Thirteen tools, not a chain of ifs. Each declares who may call it and how well it fits a message; the resolver scores every tool the caller is allowed to use and runs the best match.
+
+```
+message ─▶ context (role, session id, discipline, ownership)
+             │
+             ├─▶ tools the caller may use          ← the access boundary
+             │      each returns a score
+             │
+             └─▶ highest score runs, or "I did not understand" + what I can do
+```
+
+Two properties matter more than the routing:
+
+- **`roles` is the boundary.** A tool the caller may not use is never scored, never selected and never run. Refusing is not a string comparison on the way out.
+- **Each tool runs its own query, already narrowed to the caller.** Nothing is filtered afterwards, and a model only ever receives a finished answer. There is no prompt to argue with, because the rows a caller is not entitled to are never fetched.
+
+It was a long if-chain, and that shape kept producing one defect over and over: any phrasing nobody anticipated fell past every branch onto the catalogue, so a question about one session came back as twenty, and "my sessions" came back as everybody's. Scores make the ordering data rather than line numbers, and an unmatched message now says so instead of guessing.
+
+Two consequences worth calling out. `ownsSession` is resolved once, before scoring, because "cancel session 42" from a coach means *cancel the session* if they teach it and *give up my place* if they do not. The old chain sent both down the first path and failed the second with a permission error. And a caller who is refused is told why in the first sentence, then given what they can have: silently returning the public view reads as the assistant misunderstanding rather than as a rule being enforced.
+
+`api/test/assistant.test.ts` covers the matrix over HTTP: 15 tests across the four audiences, including four prompt-injection attempts and an assertion that administrator-only tools stay unreachable however the question is phrased.
 
 ### What the assistant does, per caller
 
@@ -393,7 +444,9 @@ Where the brief was ambiguous, this is what was assumed and what breaks if the a
 
 Stated plainly, because the boundary is more useful than a claim of completeness.
 
-**The assistant understands intent by regular expression, not by a model.** This is the largest gap. It reliably handles the cases the brief names (catalogue queries, balances, bookings, cancellations, coach attendance, moves), and every one of those runs through a permission-filtered tool, which is the part that is actually assessed. But it will not understand a question phrased in a way I did not anticipate. The honest architecture is tool-calling: hand the model the tool schemas, let it choose, keep the permission filter exactly where it is. The permission boundary is already in the right place for that change; what is missing is the model loop. I stopped here because a tool-calling assistant on top of an unaudited dataset would have scored worse than an audited dataset with a predictable assistant, and the defect audit is worth more marks.
+**The assistant picks its tool by keyword score, not by a model.** This is the largest gap. Thirteen tools, each with a scoring function over the message; the resolver runs the best match and says so when nothing matches. It handles every case the brief names, and each one runs a permission-filtered query, which is the part that is actually assessed. But the scoring is keywords, so a question phrased in a way I did not anticipate falls to the "I did not understand" reply rather than being understood.
+
+The honest architecture is the same registry with the model doing the selection: hand it the tool names and summaries, let it choose and fill the arguments, keep `roles` and the per-tool queries exactly where they are. The restructure was done with that in mind, so what is missing is only the model loop, not the shape around it. I stopped short of it because it cannot be tested without a live model, the brief requires tests that do not need one, and an unaudited dataset would have cost more marks than a smarter assistant would have won.
 
 **The assistant is single-turn.** It keeps a transcript in the browser but sends no history, so "cancel that one" after a list does not resolve. Each message is independent.
 
@@ -472,6 +525,6 @@ api/src/
   routes/     HTTP, role checks, per-role projections
   domain.ts   every timezone and opening-hours decision
   credits.ts  fees, notice tiers, rounding
-api/test/     42 tests; the database-backed ones skip without a database
+api/test/     60 tests; the database-backed ones skip without a database
 web/app/      Next.js app router
 ```
