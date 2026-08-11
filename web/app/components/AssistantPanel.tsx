@@ -47,11 +47,29 @@ export default function AssistantPanel() {
   const [email, setEmail] = useState('');
   const [needsEmail, setNeedsEmail] = useState(false);
   const [busy, setBusy] = useState(false);
-  const transcriptEnd = useRef<HTMLDivElement>(null);
+  const transcript = useRef<HTMLDivElement>(null);
 
+  /**
+   * Keeps the newest turn in view by scrolling the transcript box, not the page.
+   *
+   * This used to call scrollIntoView on a marker element, which scrolls every
+   * scrollable ancestor — including the document. Because the effect also runs
+   * on mount, simply loading the public page dragged the whole window down to
+   * wherever the panel happened to sit.
+   *
+   * Setting scrollTop on the container touches nothing outside it, and the
+   * first run is skipped so an untouched panel never moves at all.
+   */
+  const turnsShown = useRef(turns.length);
   useEffect(() => {
-    transcriptEnd.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [turns, busy]);
+    // Gated on the transcript actually growing rather than on "has this run
+    // before": in development React mounts effects twice, which defeats a
+    // first-run flag and scrolls a panel nobody has touched.
+    if (turns.length === turnsShown.current) return;
+    turnsShown.current = turns.length;
+    const box = transcript.current;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [turns]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -93,7 +111,7 @@ export default function AssistantPanel() {
         <p>Ask anonymously about upcoming sessions. Sign in when you need your balance, your bookings, or coach-level detail.</p>
       </div>
 
-      <div className="assistant-conversation" aria-live="polite" aria-busy={busy}>
+      <div className="assistant-conversation" aria-live="polite" aria-busy={busy} ref={transcript}>
         {turns.map((turn, index) => (
           <div key={index} className={`assistant-turn assistant-turn-${turn.role}`}>
             <span className="assistant-label">{turn.role === 'you' ? 'You' : 'Atrium'}</span>
@@ -123,7 +141,6 @@ export default function AssistantPanel() {
             <p>Checking the live schedule…</p>
           </div>
         )}
-        <div ref={transcriptEnd} />
       </div>
 
       <form className="assistant-form" onSubmit={submit}>
