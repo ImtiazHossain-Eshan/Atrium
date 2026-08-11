@@ -18,7 +18,7 @@ cp env.example .env
 
 On Windows use `copy env.example .env`. If `createdb` is not on `PATH`, the PostgreSQL tools are usually at `C:\Program Files\PostgreSQL\17\bin`.
 
-Open `.env` and set `DATABASE_URL` to your own connection string, then replace `SESSION_SECRET`. Nothing else needs changing — email defaults to printing to the terminal and the assistant defaults to a deterministic local stub, so no accounts, keys or extra services are required.
+Open `.env` and set `DATABASE_URL` to your own connection string, then replace `SESSION_SECRET`. Nothing else needs changing: email defaults to printing to the terminal and the assistant defaults to a deterministic local stub, so no accounts, keys or extra services are required.
 
 ```bash
 npm install
@@ -50,7 +50,7 @@ The supplied seed stores hashes of passwords that were never written down, so `n
 | Coach | `oscar.lindqvist@atrium.local` | `atrium-coach-demo` |
 | Administrator | `admin@atrium.local` | `atrium-admin-demo` |
 
-All three use the same sign-in form at `/login`; where you land is decided by the role on the account. Every other seeded account keeps its original hash and is reached through **Set or reset a password** on the login page — the link arrives in the API terminal.
+All three use the same sign-in form at `/login`; where you land is decided by the role on the account. Every other seeded account keeps its original hash and is reached through **Set or reset a password** on the login page, and the link arrives in the API terminal.
 
 New participants can also sign up at `/signup` and start with 4000 credits.
 
@@ -103,7 +103,7 @@ The schedule is proportional to room time, at roughly two-thirds of a credit per
 
 Refunds use `floor`. A 15-credit place at the 25% tier returns 3 credits, not 4.
 
-The direction is chosen deliberately and stated on the public page. Rounding down means the centre never pays out more than it took, and every partial refund resolves in the same direction, so no sequence of book-and-cancel cycles can manufacture credits. The maximum a participant can lose to rounding is one credit per cancellation, against a minimum place fee of 15 — under 7%, and only on the two partial tiers. Rounding up would have made a 1-credit-per-cancellation faucet out of the 25% tier.
+The direction is chosen deliberately and stated on the public page. Rounding down means the centre never pays out more than it took, and every partial refund resolves in the same direction, so no sequence of book-and-cancel cycles can manufacture credits. The maximum a participant can lose to rounding is one credit per cancellation, against a minimum place fee of 15, which is under 7%, and only on the two partial tiers. Rounding up would have made a 1-credit-per-cancellation faucet out of the 25% tier.
 
 ---
 
@@ -131,7 +131,7 @@ Two things follow that are worth stating plainly:
 - **Symmetry is a fairness argument, not a laziness one.** A participant reading the public page learns one set of tiers and it applies to them whichever role they hold. Coaches attend one another's sessions, so the same person is a coach on Tuesday and a participant on Wednesday. A different schedule per role would mean the same human being faces different rules for the same act depending on which side of the room they are standing on.
 - **The absolute amounts already scale.** A coach forfeits up to 120 credits, a participant up to 60, because the fees differ. The percentages do not need to differ as well for the penalty to be proportionate.
 
-**There is no booking deadline for participants.** A coach commits a room and must do so 48 hours ahead; a participant commits only themselves and can take a free place up to the moment the session starts. A booking made inside 24 hours is immediately in the 0% tier, which is stated on the public page — it can be made, but not undone for value.
+**There is no booking deadline for participants.** A coach commits a room and must do so 48 hours ahead; a participant commits only themselves and can take a free place up to the moment the session starts. A booking made inside 24 hours is immediately in the 0% tier, which is stated on the public page: it can be made, but not undone for value.
 
 **No-shows are not cancellations.** Failing to attend without cancelling forfeits the fee in full. Anything else would make the 0% tier meaningless.
 
@@ -161,62 +161,62 @@ None of these were pointed out. They are grouped by where they were found.
 | No person-overlap enforcement | Not implemented | One predicate covering teaching and attending, in every write path |
 | No booking, enrolment or cancellation API | Not implemented | Built |
 
-### Found in the second audit pass — migration `003_integrity.sql`
+### Found in the second audit pass: migration `003_integrity.sql`
 
 These survived the first hardening pass and were found by auditing the data rather than the code.
 
-**Enrolments stranded on cancelled sessions.** Cancelling a session must release its participants and return what they paid. Migration `002` cancelled five invalid historical sessions but left their enrolments `active`, and the supplied seed already contained the same inconsistency on two sessions it had cancelled itself. Thirteen participants were left holding paid, active places in sessions that will never run — the rows still appeared in `/api/bookings`, and cancelling them through the API was impossible because the session was already cancelled. **260 credits had been taken and never returned.** Fixed as a predicate over the data rather than against a list of ids, so it corrects every occurrence rather than the ones that happened to be noticed.
+**Enrolments stranded on cancelled sessions.** Cancelling a session must release its participants and return what they paid. Migration `002` cancelled five invalid historical sessions but left their enrolments `active`, and the supplied seed already contained the same inconsistency on two sessions it had cancelled itself. Thirteen participants were left holding paid, active places in sessions that will never run. The rows still appeared in `/api/bookings`, and cancelling them through the API was impossible because the session was already cancelled. **260 credits had been taken and never returned.** Fixed as a predicate over the data rather than against a list of ids, so it corrects every occurrence rather than the ones that happened to be noticed.
 
-**The attendance table was never audited, and never read.** `check_in` came with the starter schema, was populated by the seed with 2000 rows, and had no `NOT NULL`, no uniqueness, and no relationship to the session clock. Nothing stopped the seed generator from recording attendance for sessions that have not happened yet, and it did: **1934 of the 2000 rows were check-ins against future sessions**, 680 of them timestamped before their own session starts. Four were against cancelled bookings and one enrolment was checked in twice. 44 rows survive. The table is now enforced by a trigger — attendance must fall inside the session interval and cannot exist against a cancelled booking — and the application actually reads it: a coach asking the assistant who has attended repeatedly gets an answer from attendance rather than from booking counts, which are an intention, not an outcome.
+**The attendance table was never audited, and never read.** `check_in` came with the starter schema, was populated by the seed with 2000 rows, and had no `NOT NULL`, no uniqueness, and no relationship to the session clock. Nothing stopped the seed generator from recording attendance for sessions that have not happened yet, and it did: **1934 of the 2000 rows were check-ins against future sessions**, 680 of them timestamped before their own session starts. Four were against cancelled bookings and one enrolment was checked in twice. 44 rows survive. The table is now enforced by a trigger, so attendance must fall inside the session interval and cannot exist against a cancelled booking. The application reads it now too: a coach asking the assistant who has attended repeatedly gets an answer from attendance rather than from booking counts, which are an intention, not an outcome.
 
-**The one index the starter shipped was on a column nothing queries.** `idx_session_created_discipline_status` indexed `(created_at, discipline, status)`. Every real access path is a time window over `starts_at`, optionally narrowed by coach or room; nothing filters by creation time. It was never used and was maintained on every write. Dropped, and replaced with indexes matching the access paths — plans below.
+**The one index the starter shipped was on a column nothing queries.** `idx_session_created_discipline_status` indexed `(created_at, discipline, status)`. Every real access path is a time window over `starts_at`, optionally narrowed by coach or room; nothing filters by creation time. It was never used and was maintained on every write. Dropped, and replaced with indexes matching the access paths. Plans below.
 
 **Almost nothing was `NOT NULL`.** `person.email`, `person.kind`, `session.room_id`, `session.starts_at`, `enrolment.person_id`, `enrolment.status`, `room.capacity`, `check_in.enrolment_id` and twenty others were all nullable. A nullable foreign key or status column is how the inconsistencies above became representable in the first place. Every column is fully populated, so the constraints cost nothing and stop the next writer reintroducing a gap.
 
-**`person.created_at` was the only naive timestamp left.** A `timestamp without time zone` is read in whatever zone the reader is in, so the same row meant different instants to the API and to a `psql` session — the seeded values came back six hours apart on a machine in Dhaka. Converted to `timestamptz`, anchoring the stored wall-clock values to centre time.
+**`person.created_at` was the only naive timestamp left.** A `timestamp without time zone` is read in whatever zone the reader is in, so the same row meant different instants to the API and to a `psql` session: the seeded values came back six hours apart on a machine in Dhaka. Converted to `timestamptz`, anchoring the stored wall-clock values to centre time.
 
 **No session ever became `completed`.** `completed` is a valid status the seed uses for 22 rows, but nothing transitioned into it, so finished sessions were still advertised as `scheduled`. The historical backlog is closed and an hourly job keeps it closed.
 
-**Historical refunds do not match the published policy, and were left alone.** 157 of 435 cancelled enrolments were refunded more than the tiers allow — 2249 credits in total, with one row 10 credits short the other way. These predate the policy this system publishes and are the centre's own record of what it actually paid; rewriting them would destroy an audit trail to make a report look tidy. They are reported here rather than corrected. Everything from this point forward is computed by `refundAmount`.
+**Historical refunds do not match the published policy, and were left alone.** 157 of 435 cancelled enrolments were refunded more than the tiers allow, 2249 credits in total, with one row 10 credits short the other way. These predate the policy this system publishes and are the centre's own record of what it actually paid; rewriting them would destroy an audit trail to make a report look tidy. They are reported here rather than corrected. Everything from this point forward is computed by `refundAmount`.
 
-**Two historical sessions break the 48-hour rule.** Sessions 667 and 726 were created 6 hours and 31 hours before they start. They are left as they are for the same reason — they are the record — and the rule is enforced on everything created since.
+**Two historical sessions break the 48-hour rule.** Sessions 667 and 726 were created 6 hours and 31 hours before they start. They are left as they are for the same reason, that they are the record, and the rule is enforced on everything created since.
 
 ### Defects fixed in the interface and API
 
-- **The public board never knew who was looking.** `GET /api/sessions` is readable anonymously, so it was mounted without session middleware — which meant `res.locals.user` was never set and the code that attaches a caller's own booking state silently never ran. A participant who had already booked was still shown a **Book a place** button, clicked it, and got a 409. Fixed with an `attachUser` middleware that resolves the caller when there is one and continues when there is not.
-- **Coaches could not see other coaches' busy periods at all.** Section 7 requires it and the calendar UI already had the rendering path, but the API's `WHERE` clause restricted a coach to sessions they owned or attended, so the busy branch was unreachable. Other coaches' sessions are now returned as opaque busy periods — time and room only, with discipline, coach identity and headcount dropped from the projection rather than hidden in the client.
+- **The public board never knew who was looking.** `GET /api/sessions` is readable anonymously, so it was mounted without session middleware, which meant `res.locals.user` was never set and the code that attaches a caller's own booking state silently never ran. A participant who had already booked was still shown a **Book a place** button, clicked it, and got a 409. Fixed with an `attachUser` middleware that resolves the caller when there is one and continues when there is not.
+- **Coaches could not see other coaches' busy periods at all.** Section 7 requires it and the calendar UI already had the rendering path, but the API's `WHERE` clause restricted a coach to sessions they owned or attended, so the busy branch was unreachable. Other coaches' sessions are now returned as opaque busy periods: time and room only, with discipline, coach identity and headcount dropped from the projection rather than hidden in the client.
 - **Every email rendered times in the server's timezone.** `toLocaleString()` was used throughout notifications and the digests, so a marker running this outside New York got the wrong hour in every message. All human-facing times go through one centre-timezone formatter.
 - **Rescheduling checked the room and the coach but not the participants.** A coach could move a session onto a slot where enrolled participants were already committed elsewhere, and could move it to inside the 48-hour window. Both are now refused, by name, listing who conflicts.
 - **The cancellation notifier guessed who to email.** It looked for enrolments cancelled in the previous minute, which misses everyone when a transaction runs long and picks up unrelated rows when it does not. The affected people are now passed in by the caller that cancelled them.
 - **The assistant returned data the interface threw away.** It built a list of matching sessions and the panel rendered only the prose sentence, so "what has places left?" answered *"I found 20 upcoming sessions"* and nothing else. The panel is now a transcript that renders the session rows, and the assistant distinguishes "what is running" from "what has places left".
 - **Two duplicate implementations of cancellation had diverged.** `routes/sessions.ts` and `services/sessions.ts` each had one, with different behaviour, and the assistant called one while the API called the other. There is one implementation now.
-- **The assistant's discipline list was hardcoded, and incomplete.** It carried four disciplines in a literal; the data has five. `career` — 37 sessions — could not be reached by any discipline filter, and the question silently fell through to the unfiltered catalogue. Disciplines are now read from the database, so one added tomorrow is searchable today.
+- **The assistant's discipline list was hardcoded, and incomplete.** It carried four disciplines in a literal; the data has five. `career`, which has 37 sessions, could not be reached by any discipline filter, and the question silently fell through to the unfiltered catalogue. Disciplines are now read from the database, so one added tomorrow is searchable today.
 - **A question naming somebody else's balance answered with the caller's own.** The generic balance branch matched before the administrator lookup, so "what is the balance for sofia@…" returned the administrator's own figure. Ordered correctly; a participant asking the same question still gets their own balance and never another account's.
 - **A compound question got half an answer.** "What is my balance and what are my bookings?" matched the bookings branch and dropped the balance. Both parts are answered when both are asked.
-- **The policy accordion dropped its toggle onto a row of its own.** `summary` was a two-column grid with three items — title, meta, and the `+`/`−` from `::after` — so the indicator wrapped and read as a stray dash under every open section.
+- **The policy accordion dropped its toggle onto a row of its own.** `summary` was a two-column grid with three items (title, meta, and the `+`/`−` from `::after`), so the indicator wrapped and read as a stray dash under every open section.
 - **The assistant printed its catalogue twice.** The answer text carried the full listing *and* the panel rendered the same sessions as rows underneath, so a simple question came back as a wall of text followed by a table of the same thing. The prose now says what was found; the rows say what they are.
 - **The session rows collapsed at phone width.** A fixed 150px date column left the discipline about eighteen pixels to wrap into, tripling the row height. They stack below 560px.
-- **Loading the public page scrolled the visitor down it.** The assistant transcript kept its newest message in view with `scrollIntoView`, which scrolls *every* scrollable ancestor including the document — and the effect also ran on mount, so simply opening the page dragged the window down to wherever the panel sat. It sets `scrollTop` on the transcript box instead, so nothing outside that box moves. The guard is on the transcript growing rather than on a first-run flag, because React mounts effects twice in development and a flag does not survive that.
-- **Dead code.** `SessionBoard.tsx` and `SessionBoardV2.tsx` were never imported. `domain.ts` exported a `localDayBounds` that nothing called and that hardcoded a UTC-5 offset with a 26-hour window — the exact daylight-saving bug the brief warns about, sitting unused in the codebase. All three removed.
+- **Loading the public page scrolled the visitor down it.** The assistant transcript kept its newest message in view with `scrollIntoView`, which scrolls *every* scrollable ancestor including the document, and the effect also ran on mount, so simply opening the page dragged the window down to wherever the panel sat. It sets `scrollTop` on the transcript box instead, so nothing outside that box moves. The guard is on the transcript growing rather than on a first-run flag, because React mounts effects twice in development and a flag does not survive that.
+- **Dead code.** `SessionBoard.tsx` and `SessionBoardV2.tsx` were never imported. `domain.ts` exported a `localDayBounds` that nothing called and that hardcoded a UTC-5 offset with a 26-hour window, the exact daylight-saving bug the brief warns about, sitting unused in the codebase. All three removed.
 - **An over-broad ignore rule.** `.gitignore` carried a `*instructions*.md` wildcard, broad enough to swallow real documentation without anyone noticing. Narrowed to exact paths.
 
 ---
 
 ## Query plans
 
-Captured with `EXPLAIN (ANALYZE, BUFFERS)` on the seeded database — 801 sessions, 3033 enrolments — by restoring the starter's index configuration inside a transaction and rolling it back.
+Captured with `EXPLAIN (ANALYZE, BUFFERS)` on the seeded database (801 sessions, 3033 enrolments) by restoring the starter's index configuration inside a transaction and rolling it back.
 
 The public catalogue over a 14-day window:
 
 ```
-BEFORE — starter index only
+BEFORE (starter index only)
   ->  Seq Scan on session s  (cost=0.00..36.03 rows=42) (actual rows=42 loops=1)
         Filter: ((status <> 'cancelled') AND (starts_at >= now()) AND (starts_at < now() + '14 days'))
         Rows Removed by Filter: 759
         Buffers: shared hit=16
 Planning Time: 0.239 ms   Execution Time: 0.486 ms   Total buffers: 51
 
-AFTER — session_starts_active_idx
+AFTER (session_starts_active_idx)
   ->  Bitmap Heap Scan on session s  (cost=4.71..21.76 rows=42) (actual rows=42 loops=1)
         Heap Blocks: exact=12
         Buffers: shared hit=14
@@ -236,7 +236,7 @@ BEFORE
         Buffers: shared hit=32
 Total cost 111.80   Total buffers: 48
 
-AFTER — enrolment_person_status_idx
+AFTER (enrolment_person_status_idx)
   ->  Bitmap Heap Scan on enrolment e  (cost=5.40..39.03 rows=109) (actual rows=107 loops=1)
         Heap Blocks: exact=26
         Buffers: shared hit=28
@@ -248,7 +248,7 @@ Total cost 73.34   Total buffers: 44
 
 **The elapsed times are not the point and should not be read as a benchmark.** At 801 sessions the whole table is three pages of cache and both plans finish in half a millisecond. What changed is the access path: the planner went from discarding 759 of 801 sessions and 2926 of 3033 enrolments through a filter, to locating the matching rows through an index. Total cost falls 12% on the catalogue and 34% on the booking lookup, and both stop scaling with total table size. On a centre with five years of history rather than seven months, that is the difference between a query that grows and one that does not.
 
-The larger fix was structural rather than an index. The starter's public feed ran one query per session for the room, the coach and the enrolment count — 3N+1 round trips for a 20-row board. It is one aggregate join now, which is why the buffer counts above are the whole query rather than one iteration of it.
+The larger fix was structural rather than an index. The starter's public feed ran one query per session for the room, the coach and the enrolment count, which is 3N+1 round trips for a 20-row board. It is one aggregate join now, which is why the buffer counts above are the whole query rather than one iteration of it.
 
 ---
 
@@ -310,27 +310,27 @@ The exclusion constraint is the honest answer to "what if the locking is wrong".
 
 Three roles, resolved from the session row and never from the request.
 
-- **Participant** — their own bookings, their own balance. Nothing about any other participant: not a name, not an email, not a count that could identify one.
-- **Coach** — their own sessions with the full attendee list, their own balance, and every other active session as an **opaque busy period**: start, end, room. Not the discipline, not whose it is, not how many are in it.
-- **Administrator** — everything.
+- **Participant**: their own bookings, their own balance. Nothing about any other participant: not a name, not an email, not a count that could identify one.
+- **Coach**: their own sessions with the full attendee list, their own balance, and every other active session as an **opaque busy period**: start, end, room. Not the discipline, not whose it is, not how many are in it.
+- **Administrator**: everything.
 
 Two implementation points matter more than the list:
 
 **Responses are built, not filtered.** The per-role branches select fields into a new object rather than deleting fields from a database row. A column added to a query later cannot leak by default, because nothing copies it into the response unless someone writes the line.
 
-**The assistant has no privileged path.** Every answer comes from a tool that runs a query already scoped to the caller. There is no filtering step after the fact and no instruction in a prompt asking the model to be careful, because the model never receives anything wider than the answer. When `MODEL_PROVIDER=ollama`, the model is handed the finished answer to rephrase and nothing else — not the caller's identity beyond a role name, and not the rows behind the answer. Prompt injection through stored data has nothing to reach: a discipline name or a participant's own name cannot widen a `where person_id = $1`.
+**The assistant has no privileged path.** Every answer comes from a tool that runs a query already scoped to the caller. There is no filtering step after the fact and no instruction in a prompt asking the model to be careful, because the model never receives anything wider than the answer. When `MODEL_PROVIDER=ollama`, the model is handed the finished answer to rephrase and nothing else: not the caller's identity beyond a role name, and not the rows behind the answer. Prompt injection through stored data has nothing to reach: a discipline name or a participant's own name cannot widen a `where person_id = $1`.
 
 `api/test/access.test.ts` asserts this over HTTP: the anonymous 401 wall, a participant who cannot see a co-attendee's name or email anywhere in any response, a body claiming `kind: "admin"` changing nothing, a coach seeing their own attendees but only a busy period for a peer's session, three injection attempts returning nothing privileged, and a signed-out token that stops working server-side.
 
 ### What the assistant does, per caller
 
-One assistant. It never asks who you are — it reads the session — and each row below is a different tool, not a different prompt.
+One assistant. It never asks who you are, it reads the session, and each row below is a different tool, not a different prompt.
 
 | Caller | Handles | Try |
 | --- | --- | --- |
-| **Anonymous** | The catalogue: what is running, when, in which room, at what cost, how many places remain. Filters by discipline and by availability. Takes a booking from an email address alone, creating the account and sending a password-setup link — the password is never issued or guessed. | *What mindfulness sessions have places left?* · *Book session 42* |
+| **Anonymous** | The catalogue: what is running, when, in which room, at what cost, how many places remain. Filters by discipline and by availability. Takes a booking from an email address alone, creating the account and sending a password-setup link, and the password is never issued or guessed. | *What mindfulness sessions have places left?* · *Book session 42* |
 | **Participant** | Everything above, plus their own balance, their own bookings, booking and cancelling as themselves with the refund tier reported back. | *What is my balance and what are my bookings?* · *Cancel session 42* |
-| **Coach** | Everything a participant can do, plus participant-level detail on **their own** sessions — who is booked, who cancelled, and who has attended repeatedly, counted from attendance rather than from bookings. Cancels or reschedules their own sessions, moving every enrolled participant with them. | *Who is attending session 42?* · *Move session 42 to 2026-09-01 14:00* |
+| **Coach** | Everything a participant can do, plus participant-level detail on **their own** sessions: who is booked, who cancelled, and who has attended repeatedly, counted from attendance rather than from bookings. Cancels or reschedules their own sessions, moving every enrolled participant with them. | *Who is attending session 42?* · *Move session 42 to 2026-09-01 14:00* |
 | **Administrator** | Substantially anything: the attendee roster and credit position of any session, any person's record by name or email, and centre-wide totals across people, sessions, upcoming load and credits held. | *Give me a centre overview* · *Who is attending session 42?* · *What is the balance for sofia.marino@atrium.local?* |
 
 The same question genuinely resolves differently. *Who is attending session 42?* returns the roster to an administrator, returns it to the coach who owns session 42, and is refused to any other coach. *What is my balance?* reports the caller's own figure and tells an anonymous visitor to sign in.
@@ -355,7 +355,7 @@ Two scheduled jobs run at **00:00 centre-local time**. A coach with nothing on r
 Two separate things have to be right for that to survive a daylight-saving change, and they fail differently:
 
 1. **When the job fires.** The cron expression is registered with `CENTRE_TIMEZONE`, so it fires at local midnight. A job anchored to a fixed UTC hour would start firing at 23:00 local after 1 November 2026.
-2. **What the job reports on.** The window runs from one local midnight to the *next* local midnight, not midnight plus 24 hours. The local day is **25 hours** long on 1 November 2026 and **23 hours** on 8 March — a fixed day under-reports the first and double-counts into the second.
+2. **What the job reports on.** The window runs from one local midnight to the *next* local midnight, not midnight plus 24 hours. The local day is **25 hours** long on 1 November 2026 and **23 hours** on 8 March, so a fixed day under-reports the first and double-counts into the second.
 
 Both are tested. `api/test/domain.test.ts` asserts the 25-hour and 23-hour days directly, that consecutive day windows meet exactly with no gap or overlap, and that the repeated 01:30 local hour on 1 November belongs to that day.
 
@@ -369,7 +369,7 @@ A third job runs hourly, moving sessions whose end time has passed to `completed
 
 Where the brief was ambiguous, this is what was assumed and what breaks if the assumption is wrong.
 
-**An intensive is one contiguous 210-minute hold, not two blocks around a gap.** "Nobody involved may be booked elsewhere during that lunch interval" then falls out of the ordinary overlap test rather than needing a rule of its own, and the room is correctly unavailable for the whole period. *If wrong* — if the centre wanted to let the room out during the interval — the room is idle for 30 minutes per intensive, and freeing it would mean modelling a session as two intervals, which changes the exclusion constraint and every overlap query.
+**An intensive is one contiguous 210-minute hold, not two blocks around a gap.** "Nobody involved may be booked elsewhere during that lunch interval" then falls out of the ordinary overlap test rather than needing a rule of its own, and the room is correctly unavailable for the whole period. *If wrong*, and the centre wanted to let the room out during the interval, the room is idle for 30 minutes per intensive, and freeing it would mean modelling a session as two intervals, which changes the exclusion constraint and every overlap query.
 
 **Administrators are not bound by the coach's 48-hour deadline.** The deadline is a rule about a coach committing a room; an administrator scheduling on behalf of the centre is doing something else, and needs to be able to fix a mistake at short notice. *If wrong*, an administrator can create a booking a coach could not have made themselves. Both paths are one `actor.kind === 'coach'` check.
 
@@ -385,7 +385,7 @@ Where the brief was ambiguous, this is what was assumed and what breaks if the a
 
 **Anonymous visitors may see coach names and remaining places on the public board.** A catalogue that hides who is teaching is not a catalogue. Attendee identities are never included. *If wrong*, the public feed needs the same projection treatment as the calendar.
 
-**Seeded historical rows are the centre's record and are not rewritten.** Invalid ones are cancelled and refunded; ones that merely disagree with current policy are reported and left. *If wrong* — if the seed were meant to be brought into line — 157 over-refunds and two late bookings would need correcting, and the audit trail would no longer show what the centre actually did.
+**Seeded historical rows are the centre's record and are not rewritten.** Invalid ones are cancelled and refunded; ones that merely disagree with current policy are reported and left. *If wrong*, and the seed were meant to be brought into line, 157 over-refunds and two late bookings would need correcting, and the audit trail would no longer show what the centre actually did.
 
 ---
 
@@ -393,11 +393,11 @@ Where the brief was ambiguous, this is what was assumed and what breaks if the a
 
 Stated plainly, because the boundary is more useful than a claim of completeness.
 
-**The assistant understands intent by regular expression, not by a model.** This is the largest gap. It reliably handles the cases the brief names — catalogue queries, balances, bookings, cancellations, coach attendance, moves — and every one of those runs through a permission-filtered tool, which is the part that is actually assessed. But it will not understand a question phrased in a way I did not anticipate. The honest architecture is tool-calling: hand the model the tool schemas, let it choose, keep the permission filter exactly where it is. The permission boundary is already in the right place for that change; what is missing is the model loop. I stopped here because a tool-calling assistant on top of an unaudited dataset would have scored worse than an audited dataset with a predictable assistant, and the defect audit is worth more marks.
+**The assistant understands intent by regular expression, not by a model.** This is the largest gap. It reliably handles the cases the brief names (catalogue queries, balances, bookings, cancellations, coach attendance, moves), and every one of those runs through a permission-filtered tool, which is the part that is actually assessed. But it will not understand a question phrased in a way I did not anticipate. The honest architecture is tool-calling: hand the model the tool schemas, let it choose, keep the permission filter exactly where it is. The permission boundary is already in the right place for that change; what is missing is the model loop. I stopped here because a tool-calling assistant on top of an unaudited dataset would have scored worse than an audited dataset with a predictable assistant, and the defect audit is worth more marks.
 
 **The assistant is single-turn.** It keeps a transcript in the browser but sends no history, so "cancel that one" after a list does not resolve. Each message is independent.
 
-**`MODEL_PROVIDER=ollama` only rephrases.** It never selects a tool or reads data. It is wired, it is constrained to localhost, and it degrades to the stub on any error — but it is a presentation layer, not a reasoning one.
+**`MODEL_PROVIDER=ollama` only rephrases.** It never selects a tool or reads data. It is wired, it is constrained to localhost, and it degrades to the stub on any error, but it is a presentation layer, not a reasoning one.
 
 **No rate limiting on sign-in or password reset.** `scrypt` at these parameters is deliberately expensive, which makes unbounded login attempts a denial-of-service vector as much as a credential one. This wants a limiter in front of both routes.
 
@@ -405,7 +405,7 @@ Stated plainly, because the boundary is more useful than a claim of completeness
 
 **No waiting list.** When a place is freed it returns to the board for whoever takes it first. The public page says so.
 
-**Coach and administrator management views filter client-side in one place.** `/admin/sessions` fetches the public catalogue and narrows it in the browser. Nothing private is exposed — it is the same data the public board serves — but it should be a scoped endpoint.
+**Coach and administrator management views filter client-side in one place.** `/admin/sessions` fetches the public catalogue and narrows it in the browser. Nothing private is exposed, since it is the same data the public board serves, but it should be a scoped endpoint.
 
 **The seeded historical over-refunds are reported, not reconciled.** Deliberate, and argued above, but it does mean the ledger does not reconstruct every balance from zero; it covers activity from this system forward.
 
@@ -439,7 +439,7 @@ The same form for everyone; the role on the account decides where you land and w
 
 ### The calendar, honouring Section 7
 
-A coach sees their own sessions in full and every other booked slot as a busy period — room and time, nothing else.
+A coach sees their own sessions in full and every other booked slot as a busy period: room and time, nothing else.
 
 ![Coach calendar showing own sessions in full and other coaches' slots as protected busy periods](docs/screenshots/calendar-coach.png)
 

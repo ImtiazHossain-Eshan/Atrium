@@ -85,18 +85,18 @@ export default async function Home() {
               <details open>
                 <summary><strong>Cancelling your place</strong><span>100 / 50 / 25 / 0% by notice given</span></summary>
                 <p>
-                  What you get back depends on how far ahead of the start time you cancel — measured in real hours, from the moment you
+                  What you get back depends on how far ahead of the start time you cancel, measured in real hours from the moment you
                   cancel, not in calendar days:
                 </p>
                 <ul className="rule-list">
-                  <li><strong>96 hours or more</strong> — all 100% of the place fee</li>
-                  <li><strong>48 to under 96 hours</strong> — 50%</li>
-                  <li><strong>24 to under 48 hours</strong> — 25%</li>
-                  <li><strong>Under 24 hours</strong> — nothing</li>
+                  <li><strong>96 hours or more</strong>: all 100% of the place fee</li>
+                  <li><strong>48 to under 96 hours</strong>: 50%</li>
+                  <li><strong>24 to under 48 hours</strong>: 25%</li>
+                  <li><strong>Under 24 hours</strong>: nothing</li>
                 </ul>
                 <p>
                   Part-credits round <strong>down</strong>: cancelling a 15-credit place at the 25% tier returns 3 credits, not 4. Cancelling
-                  after the session has started is treated as under 24 hours. <strong>Not turning up is not a cancellation</strong> — if you
+                  after the session has started is treated as under 24 hours. <strong>Not turning up is not a cancellation</strong>. If you
                   do not cancel, you keep the booking and lose the fee.
                 </p>
               </details>
@@ -113,7 +113,7 @@ export default async function Home() {
                 <summary><strong>When you can book</strong><span>Any time until the session starts</span></summary>
                 <p>
                   There is no deadline on booking a place: if a session has a place left, you can take it right up to the moment it starts.
-                  Be aware that a booking made inside 24 hours is already in the 0% refund tier — you can book it, but you cannot get the
+                  Be aware that a booking made inside 24 hours is already in the 0% refund tier. You can book it, but you cannot get the
                   fee back if you change your mind. <em>Coaches</em> booking a room have a different rule and must book at least 48 hours
                   ahead.
                 </p>
@@ -127,7 +127,7 @@ export default async function Home() {
                 </p>
                 <p>
                   An <strong>intensive</strong> holds you for its whole 210-minute block, including the 30-minute interval in the middle. You
-                  cannot book anything else during that interval, in any room — the break belongs to the session.
+                  cannot book anything else during that interval, in any room. The break belongs to the session.
                 </p>
               </details>
 
@@ -135,15 +135,15 @@ export default async function Home() {
                 <summary><strong>Session shape and opening hours</strong><span>45 / 60 / 210-minute room holds</span></summary>
                 <p>
                   Short is 45 minutes and standard is 60. An intensive teaches for 180 minutes with a 30-minute interval, so the room is held
-                  for 210. Every session runs inside <strong>07:00–21:00, Monday to Saturday</strong>, in the centre's own New York time —
-                  every time shown on this site is New York time, wherever you are reading it. The centre is closed on Sundays.
+                  for 210. Every session runs inside <strong>07:00–21:00, Monday to Saturday</strong>, in the centre's own New York time.
+                  Every time shown on this site is New York time, wherever you are reading it. The centre is closed on Sundays.
                 </p>
               </details>
 
               <details>
                 <summary><strong>Places and capacity</strong><span>First come, no waiting list</span></summary>
                 <p>
-                  Each room has a fixed capacity, counting participants only — the coach does not take a place. When the places shown against
+                  Each room has a fixed capacity, counting participants only, so the coach does not take a place. When the places shown against
                   a session reach zero it is full, and there is no waiting list: if someone cancels, the place returns to the board for
                   whoever takes it first.
                 </p>

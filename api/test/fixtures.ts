@@ -38,7 +38,7 @@ export async function databaseAvailable(): Promise<boolean> {
 export function dbIt(name: string, fn: () => Promise<void>): void {
   it(name, async (t) => {
     if (!(await databaseAvailable())) {
-      t.skip('no database reachable — set DATABASE_URL and run npm run migrate');
+      t.skip('no database reachable: set DATABASE_URL and run npm run migrate');
       return;
     }
     await fn();

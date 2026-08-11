@@ -18,7 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       {/*
         Browser extensions write their own attributes onto <body> before React
-        hydrates — ColorZilla adds cz-shortcut-listen, password managers and
+        hydrates. ColorZilla adds cz-shortcut-listen, password managers and
         grammar checkers do similar. The server sends a bare <body>, so React
         reports the difference as a hydration mismatch that is not ours and
         cannot be fixed from here.

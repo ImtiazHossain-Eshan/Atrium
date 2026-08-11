@@ -27,7 +27,7 @@ function transport(): nodemailer.Transporter {
  * problems are logged rather than thrown.
  *
  * When SMTP is configured but unreachable the failure is logged loudly, because
- * the alternative — silence — looks exactly like a system with no email at all.
+ * the alternative, silence, looks exactly like a system with no email at all.
  */
 export async function sendMail(mail: Mail): Promise<void> {
   const mode = process.env.MAIL_TRANSPORT || 'console';
@@ -102,7 +102,7 @@ export async function notifyBookingCancelled(sessionId: number, personId: number
 }
 
 /**
- * A cancelled session notifies everyone who held a place — participants and any
+ * A cancelled session notifies everyone who held a place: participants and any
  * coach who was attending it.
  *
  * The affected people are passed in by the caller rather than inferred from a
@@ -128,7 +128,7 @@ export async function notifySessionCancelled(sessionId: number, personIds: numbe
       subject: `Cancelled: ${row.discipline} on ${centreDateTime(row.starts_at)}`,
       text:
         `Your ${row.discipline} session on ${centreDateTime(row.starts_at)} in ${row.room_name} was cancelled by the coach.\n` +
-        `${row.credits_refunded} credits have been returned to your account in full — the notice tiers do not apply when a coach cancels.`
+        `${row.credits_refunded} credits have been returned to your account in full. The notice tiers do not apply when a coach cancels.`
     });
   }
 }

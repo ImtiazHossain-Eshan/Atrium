@@ -98,7 +98,7 @@ export default function CalendarPage() {
         <div>
           <span className="section-mark">Centre-local calendar</span>
           <h1>Plan the week.</h1>
-          <p>Times are shown in {timezoneLabel}. A busy period shows that a room is taken and nothing else — never the discipline, the coach or who is attending.</p>
+          <p>Times are shown in {timezoneLabel}. A busy period shows that a room is taken and nothing else, never the discipline, the coach or who is attending.</p>
         </div>
         <Link className="button button-soft" href="/dashboard">Back to dashboard</Link>
       </div>

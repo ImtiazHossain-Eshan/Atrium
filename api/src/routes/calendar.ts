@@ -23,11 +23,11 @@ type CalendarRow = {
 /**
  * Section 7 gives each role a different calendar:
  *
- *   participant — only the sessions they hold a place in.
- *   coach       — their own sessions and the ones they attend in full, plus
+ *   participant: only the sessions they hold a place in.
+ *   coach:       their own sessions and the ones they attend in full, plus
  *                 every other active session as an opaque busy period so they
  *                 can plan around the room. Never who is attending those.
- *   admin       — everything.
+ *   admin:       everything.
  *
  * The narrowing happens in SQL and in the projection below, not in the client.
  * A busy period is built by dropping fields, so a field that is not selected
@@ -78,7 +78,7 @@ router.get('/', requireSession, async (req, res) => {
     const result = sessions.map((session) => {
       if (session.relation === 'other') {
         // Time and room only. Discipline, coach identity and headcount are all
-        // withheld — the caller learns that the room is unavailable, nothing more.
+        // withheld, so the caller learns that the room is unavailable, nothing more.
         return {
           id: session.id,
           starts_at: session.starts_at,

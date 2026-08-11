@@ -314,7 +314,7 @@ input, select, textarea { min-height: 44px; width: 100%; border: 1px solid var(-
   .header-inner, .page-shell, .dashboard-shell { width: min(100% - 24px, 1180px); }
   /* Three columns do not fit a phone: the fixed date column starved the middle
      one to a few characters and wrapped the discipline down the row. Stack
-     instead — when, what, then availability. */
+     instead: when, what, then availability. */
   .assistant-session { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 12px 0; }
   .assistant-session-when { grid-column: 1 / -1; }
   .assistant-session-what { grid-column: 1; }

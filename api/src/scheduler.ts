@@ -10,7 +10,7 @@ import { completeFinishedSessions } from './services/sessions';
  *
  * Two things have to be right for that to hold across a daylight-saving change.
  * The cron expression is registered with the centre timezone, so the job fires
- * at local midnight rather than at a fixed UTC hour — a UTC-anchored job would
+ * at local midnight rather than at a fixed UTC hour, because a UTC-anchored job would
  * start firing at 23:00 local after 1 November 2026. And the window is built
  * from one local midnight to the *next* local midnight rather than by adding 24
  * hours, because the local day is 25 hours long on 1 November and 23 hours long
@@ -50,14 +50,14 @@ export async function sendDailyDigests(now = new Date()): Promise<void> {
 
     await sendMail({
       to: coach.email,
-      subject: `Your Atrium day — ${window.date}`,
+      subject: `Your Atrium day: ${window.date}`,
       text:
         `Sessions for ${window.date} (${CENTRE_TIMEZONE}):\n\n` +
         sessions
           .map(
             (session) =>
               `${centreClock(session.starts_at)}–${centreClock(session.ends_at)}  ${session.discipline} in ${session.room_name}` +
-              (session.teaching ? ` — teaching, ${session.attendees} attendee(s)` : ' — you are attending')
+              (session.teaching ? ` (teaching, ${session.attendees} attendee(s))` : ' (attending)')
           )
           .join('\n')
     });
@@ -82,7 +82,7 @@ export async function sendDailyDigests(now = new Date()): Promise<void> {
   for (const admin of admins) {
     await sendMail({
       to: admin.email,
-      subject: `Atrium daily digest — ${window.date}`,
+      subject: `Atrium daily digest: ${window.date}`,
       text: digest.length
         ? `${digest.length} session(s) and ${totalAttendances} attendance(s) for ${window.date} (${CENTRE_TIMEZONE}):\n\n` +
           digest

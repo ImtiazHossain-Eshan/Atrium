@@ -53,7 +53,7 @@ export default function AssistantPanel() {
    * Keeps the newest turn in view by scrolling the transcript box, not the page.
    *
    * This used to call scrollIntoView on a marker element, which scrolls every
-   * scrollable ancestor — including the document. Because the effect also runs
+   * scrollable ancestor, including the document. Because the effect also runs
    * on mount, simply loading the public page dragged the whole window down to
    * wherever the panel happened to sit.
    *

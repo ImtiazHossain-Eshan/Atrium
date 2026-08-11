@@ -13,7 +13,7 @@ import passwordRoutes from './routes/password';
 
 /**
  * Builds the application. Listening is `server.ts`'s job, so importing this
- * module — from a test, or from a script — does not open a port or start the
+ * module, whether from a test or from a script, does not open a port or start the
  * scheduler as a side effect.
  */
 const app = express();

@@ -23,7 +23,7 @@ function moveTarget(message: string) {
 /**
  * Disciplines come from the data, not from a list in this file.
  *
- * They were hardcoded, and the list was missing `career` — 37 sessions that no
+ * They were hardcoded, and the list was missing `career`, 37 sessions that no
  * discipline filter could ever reach. Reading them from the database means a
  * discipline the centre adds tomorrow is searchable today.
  */
@@ -51,7 +51,7 @@ async function disciplineFrom(message: string): Promise<string | null> {
 }
 
 /**
- * The catalogue tool. Anyone may call it, signed in or not — nothing it returns
+ * The catalogue tool. Anyone may call it, signed in or not, because nothing it returns
  * is anyone's private information. Every other tool in this file narrows by the
  * caller before it reads, which is why filtering never has to happen afterwards.
  */
@@ -236,13 +236,13 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
     const lines = attendees.map((row) => {
       const history = `${row.attended_with_you} attendance(s) and ${row.cancelled_on_you} cancellation(s) with you`;
       const state = row.status === 'cancelled' ? 'cancelled' : row.attended ? 'attended' : 'booked';
-      return `${row.full_name} — ${state}, ${history}`;
+      return `${row.full_name}: ${state}, ${history}`;
     });
     return { answer: `Session ${sessionId} has ${attendees.length} recorded enrolment(s):\n${lines.join('\n')}` };
   }
 
   // An administrator sees everything, so their tools are the same shape as the
-  // others with the ownership predicate removed — not a wider prompt.
+  // others with the ownership predicate removed, not a wider prompt.
   if (user?.kind === 'admin') {
     if (sessionId && /(attend|who|detail|enrol|enrol|roster)/.test(lower)) {
       const rows = await query<any>(
@@ -265,7 +265,7 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
       if (!people.length) return { answer: `${header} Nobody is enrolled.` };
       const lines = people.map(
         (row) =>
-          `${row.full_name} <${row.email}> — ${row.booking_status}` +
+          `${row.full_name} <${row.email}>: ${row.booking_status}` +
           `${row.attended ? ', attended' : ''}, charged ${row.credits_charged}` +
           `${Number(row.credits_refunded) > 0 ? `, refunded ${row.credits_refunded}` : ''}`
       );
@@ -289,7 +289,7 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
         answer: rows
           .map(
             (row) =>
-              `${row.full_name} <${row.email}> — ${row.kind}${row.active ? '' : ', inactive'}, ` +
+              `${row.full_name} <${row.email}>: ${row.kind}${row.active ? '' : ', inactive'}, ` +
               `${row.credits} credits, ${row.active_bookings} active booking(s), ${row.sessions_taught} session(s) taught`
           )
           .join('\n')

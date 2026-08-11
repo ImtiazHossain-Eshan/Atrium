@@ -46,7 +46,7 @@ async function main(): Promise<void> {
       [hashPassword(account.password), account.email]
     );
     if (!updated[0]) {
-      console.warn(`  ! ${account.label}: no active account for ${account.email} — skipped`);
+      console.warn(`  ! ${account.label}: no active account for ${account.email}, skipped`);
       continue;
     }
     if (updated[0].kind !== account.kind) {

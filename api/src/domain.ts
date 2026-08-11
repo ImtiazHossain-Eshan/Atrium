@@ -49,7 +49,7 @@ export function centreDateParts(value: Date): { weekday: string; hour: number; m
 }
 
 /**
- * Every time shown to a human — email, digest, log line — goes through here.
+ * Every time shown to a human (email, digest, log line) goes through here.
  * `toLocaleString()` renders in whatever zone the server happens to run in,
  * which is not the zone the centre operates in and not the zone the reader
  * cares about.

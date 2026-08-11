@@ -1,8 +1,8 @@
 /**
  * Process entry point: opens the port and starts the scheduled jobs.
  *
- * Kept separate from `index.ts` so that importing the application — in a test,
- * or in a script — never has the side effect of binding a port or registering
+ * Kept separate from `index.ts` so that importing the application, whether in a test
+ * or in a script, never has the side effect of binding a port or registering
  * cron jobs.
  */
 import app from './index';
