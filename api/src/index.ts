@@ -1,7 +1,7 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import { login, logout, me, requireSession, signup } from './auth';
+import { attachUser, login, logout, me, requireSession, signup } from './auth';
 import sessionRoutes from './routes/sessions';
 import roomRoutes from './routes/rooms';
 import peopleRoutes from './routes/people';
@@ -10,8 +10,12 @@ import calendarRoutes from './routes/calendar';
 import dashboardRoutes from './routes/dashboard';
 import assistantRoutes from './routes/assistant';
 import passwordRoutes from './routes/password';
-import { startScheduler } from './scheduler';
 
+/**
+ * Builds the application. Listening is `server.ts`'s job, so importing this
+ * module — from a test, or from a script — does not open a port or start the
+ * scheduler as a side effect.
+ */
 const app = express();
 app.disable('x-powered-by');
 
@@ -32,20 +36,14 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/password', passwordRoutes);
 app.use('/api/assistant', assistantRoutes);
 
-app.use('/api/sessions', sessionRoutes);
+// The catalogue is readable anonymously but answers a signed-in caller with
+// their own booking state, so the session has to be resolved before the router
+// rather than only inside the routes that require one.
+app.use('/api/sessions', attachUser, sessionRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/people', peopleRoutes);
-
-const port = Number(process.env.API_PORT) || 4000;
-
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(port, () => {
-    console.log(`api listening on http://localhost:${port}`);
-    startScheduler();
-  });
-}
 
 export default app;

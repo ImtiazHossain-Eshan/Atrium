@@ -2,12 +2,17 @@
 .env.*
 !env.example
 
-# Submission-only assignment materials
+# Submission-only assignment materials. These are the brief and the working
+# notes for it, not part of the deliverable. Kept to exact paths: a wildcard
+# such as **/*instructions*.md is broad enough to swallow real documentation
+# without anyone noticing.
 assignment/
 instructions/
+AGENTS.md
+
+# The starter's own setup notes, superseded by README.md and linking to the
+# brief above. Kept locally so the original is still to hand.
 INSTRUCTIONS.md
-**/AGENTS.md
-**/*instructions*.md
 
 node_modules/
 dist/

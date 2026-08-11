@@ -7,7 +7,7 @@
     "web"
   ],
   "scripts": {
-    "migrate": "node scripts/migrate.mjs",
+    "migrate": "node scripts/migrate.mjs && npm --workspace api run seed:demo",
     "dev:api": "npm --workspace api run dev",
     "dev:web": "npm --workspace web run dev",
     "build": "npm --workspace api run build && npm --workspace web run build",

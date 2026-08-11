@@ -3,7 +3,9 @@ import { createPasswordReset, getUserFromRequest, CurrentUser } from '../auth';
 import { query } from '../db';
 import { notifyBooking, sendPasswordSetup } from '../notifications';
 import { bookSessionForPerson, cancelBookingForPerson, createVisitorParticipant } from '../services/bookings';
-import { cancelSessionForCoach, rescheduleSessionForCoach } from '../services/sessions';
+import { DomainError, cancelSession, rescheduleSession } from '../services/sessions';
+import { sessionDurationMinutes } from '../credits';
+import { CENTRE_TIMEZONE, centreDateTime, centreInstant } from '../domain';
 import { polishAssistantAnswer } from '../assistantProvider';
 
 const router = Router();
@@ -13,42 +15,72 @@ function sessionIdFrom(message: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-function zoneOffset(date: Date) {
-  const part = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'shortOffset' }).formatToParts(date).find((item) => item.type === 'timeZoneName')?.value || 'GMT';
-  const match = part.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
-  if (!match) return 0;
-  return (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] || 0)) * 60000;
-}
-
-function centreIso(date: string, time: string) {
-  const [year, month, day] = date.split('-').map(Number);
-  const [hour, minute] = time.split(':').map(Number);
-  const naive = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  return new Date(naive.getTime() - zoneOffset(naive)).toISOString();
-}
-
 function moveTarget(message: string) {
   const match = message.match(/(\d{4}-\d{2}-\d{2})[ T](\d{1,2}:\d{2})/);
   return match ? { date: match[1], time: match[2].padStart(5, '0') } : null;
 }
 
-const assistantDisciplines = ['fitness', 'mindfulness', 'financial', 'lifestyle'] as const;
+/**
+ * Disciplines come from the data, not from a list in this file.
+ *
+ * They were hardcoded, and the list was missing `career` — 37 sessions that no
+ * discipline filter could ever reach. Reading them from the database means a
+ * discipline the centre adds tomorrow is searchable today.
+ */
+let disciplineCache: { values: string[]; readAt: number } = { values: [], readAt: 0 };
+const DISCIPLINE_TTL_MS = 5 * 60 * 1000;
 
-function disciplineFrom(message: string) {
-  return assistantDisciplines.find((discipline) => new RegExp(`\\b${discipline}\\b`, 'i').test(message)) || null;
+async function knownDisciplines(): Promise<string[]> {
+  if (Date.now() - disciplineCache.readAt < DISCIPLINE_TTL_MS && disciplineCache.values.length) {
+    return disciplineCache.values;
+  }
+  const rows = await query<{ discipline: string }>(
+    "select distinct discipline from session where status <> 'cancelled' order by discipline"
+  );
+  disciplineCache = { values: rows.map((row) => row.discipline).filter(Boolean), readAt: Date.now() };
+  return disciplineCache.values;
 }
 
-async function publicCatalogue(discipline: string | null = null) {
-  const disciplineFilter = discipline ? ' and s.discipline = $1' : '';
-  const params = discipline ? [discipline] : [];
-  return query<any>(
+function escapeForRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function disciplineFrom(message: string): Promise<string | null> {
+  const disciplines = await knownDisciplines();
+  return disciplines.find((discipline) => new RegExp(`\\b${escapeForRegex(discipline)}\\b`, 'i').test(message)) || null;
+}
+
+/**
+ * The catalogue tool. Anyone may call it, signed in or not — nothing it returns
+ * is anyone's private information. Every other tool in this file narrows by the
+ * caller before it reads, which is why filtering never has to happen afterwards.
+ */
+async function publicCatalogue(discipline: string | null = null, withPlacesOnly = false) {
+  const params: unknown[] = [];
+  let filter = '';
+  if (discipline) {
+    params.push(discipline);
+    filter += ` and s.discipline = $${params.length}`;
+  }
+  const rows = await query<any>(
     `select s.id, s.discipline, s.session_type, s.starts_at, s.ends_at, r.name as room_name,
-            r.capacity - count(e.id) filter (where e.status = 'active')::int as places_remaining,
+            r.capacity as capacity,
+            count(e.id) filter (where e.status = 'active')::int as enrolled,
+            greatest(0, r.capacity - count(e.id) filter (where e.status = 'active')::int) as places_remaining,
             s.seat_fee_credits
        from session s join room r on r.id = s.room_id left join enrolment e on e.session_id = s.id
-      where s.status <> 'cancelled' and s.starts_at >= now() and s.starts_at < now() + interval '14 days'${disciplineFilter}
-      group by s.id, r.id order by s.starts_at limit 20`,
+      where s.status <> 'cancelled' and s.starts_at >= now() and s.starts_at < now() + interval '14 days'${filter}
+      group by s.id, r.id order by s.starts_at limit 40`,
     params
+  );
+  const filtered = withPlacesOnly ? rows.filter((row) => Number(row.places_remaining) > 0) : rows;
+  return filtered.slice(0, 20);
+}
+
+function catalogueLine(session: any) {
+  return (
+    `#${session.id} · ${session.discipline} (${session.session_type}) · ${centreDateTime(session.starts_at)} · ` +
+    `${session.room_name} · ${session.places_remaining} of ${session.capacity} places left · ${session.seat_fee_credits} credits`
   );
 }
 
@@ -66,14 +98,7 @@ async function activeBookingsFor(personId: number) {
 }
 
 function bookingLabel(booking: any) {
-  const when = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit'
-  }).format(new Date(booking.starts_at));
-  return `#${booking.id} ${booking.discipline} on ${when} in ${booking.room_name}`;
+  return `#${booking.id} ${booking.discipline} on ${centreDateTime(booking.starts_at)} in ${booking.room_name}`;
 }
 
 async function replyForUser(message: string, user: CurrentUser | null, email?: string) {
@@ -87,21 +112,28 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
       try {
         const result = await query<any>('select session_type from session where id = $1 and coach_id = $2 and status <> \'cancelled\'', [sessionId, user.id]);
         if (!result[0]) return { answer: 'I can only move one of your active sessions.' };
-        const minutes = result[0].session_type === 'short' ? 45 : result[0].session_type === 'intensive' ? 210 : 60;
-        const startsAt = centreIso(target.date, target.time);
-        const endsAt = new Date(new Date(startsAt).getTime() + minutes * 60000).toISOString();
-        await rescheduleSessionForCoach(sessionId, user.id, startsAt, endsAt);
-        return { answer: `Session ${sessionId} moved to ${target.date} at ${target.time} New York time. Enrolled attendees were notified.`, action: { type: 'session_rescheduled' } };
+        const startsAt = centreInstant(target.date, target.time);
+        const endsAt = new Date(new Date(startsAt).getTime() + sessionDurationMinutes(result[0].session_type) * 60000).toISOString();
+        await rescheduleSession(sessionId, { id: user.id, kind: user.kind }, startsAt, endsAt);
+        return { answer: `Session ${sessionId} moved to ${target.date} at ${target.time} ${CENTRE_TIMEZONE} time. Everyone enrolled has been moved with it and notified.`, action: { type: 'session_rescheduled' } };
       } catch (err) {
-        const reason = err instanceof Error ? err.message : '';
-        return { answer: reason === 'room_conflict' ? 'That room is already booked at the new time.' : reason === 'person_conflict' ? 'You already have another commitment at the new time.' : 'I could not move that session.' };
+        // The tool reports the domain's own refusal rather than inventing one:
+        // the caller is told exactly why the move was not allowed.
+        if (err instanceof DomainError) return { answer: err.message };
+        console.error(err);
+        return { answer: 'I could not move that session.' };
       }
     }
     try {
-      await cancelSessionForCoach(sessionId, user.id);
-      return { answer: `Session ${sessionId} cancelled. Enrolled participants were fully refunded and notified.`, action: { type: 'session_cancelled' } };
+      const summary = await cancelSession(sessionId, { id: user.id, kind: user.kind });
+      return {
+        answer: `Session ${sessionId} cancelled. ${summary.affected} participant(s) were refunded ${summary.participantRefund} credits in full and notified. You received ${summary.coachRefund} credits back at ${Math.round(summary.refundPercent * 100)}% notice.`,
+        action: { type: 'session_cancelled' }
+      };
     } catch (err) {
-      return { answer: err instanceof Error && err.message === 'forbidden' ? 'I can only cancel one of your own sessions.' : 'I could not cancel that session.' };
+      if (err instanceof DomainError) return { answer: err.message };
+      console.error(err);
+      return { answer: 'I could not cancel that session.' };
     }
   }
 
@@ -133,17 +165,9 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
         action: { type: 'booking_created', booking_id: booking.id }
       };
     } catch (err) {
-      const bookingError = err instanceof Error ? err.message : '';
-      const responses: Record<string, string> = {
-        not_found: 'That session is not available.',
-        own_session: 'A coach cannot book their own session.',
-        past_session: 'That session has already started.',
-        already_booked: 'You already have an active booking for that session.',
-        full: 'That session is full.',
-        person_conflict: 'You already have another commitment during that interval.',
-        insufficient_credits: 'There are not enough credits on the account for that place.'
-      };
-      return { answer: responses[bookingError] || 'I could not complete that booking.' };
+      if (err instanceof DomainError) return { answer: err.message };
+      console.error(err);
+      return { answer: 'I could not complete that booking.' };
     }
   }
 
@@ -151,8 +175,14 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
     if (!user) return { answer: 'Sign in to see your upcoming bookings.' };
     if (user.kind === 'admin') return { answer: 'Administrators do not have participant bookings. Use the session desk to manage sessions.' };
     const bookings = await activeBookingsFor(user.id);
-    if (!bookings.length) return { answer: 'You have no active upcoming bookings.' };
-    return { answer: `Your active bookings are: ${bookings.map(bookingLabel).join('; ')}.` };
+    // "What is my balance and what are my bookings?" is one question with two
+    // parts. Answering only the part that matched first reads as ignoring the
+    // rest, so both are answered when both are asked.
+    const alsoBalance = /(credit|balance)/.test(lower) ? `Your balance is ${user.credits} credits. ` : '';
+    if (!bookings.length) return { answer: `${alsoBalance}You have no active upcoming bookings.` };
+    return {
+      answer: `${alsoBalance}You have ${bookings.length} active upcoming booking(s):\n${bookings.map((booking) => `· ${bookingLabel(booking)}`).join('\n')}`
+    };
   }
 
   if (/(cancel|drop)/.test(lower)) {
@@ -166,39 +196,171 @@ async function replyForUser(message: string, user: CurrentUser | null, email?: s
     }
     try {
       const result = await cancelBookingForPerson(user.id, sessionId);
-      return { answer: `Booking cancelled. The account received ${result.refund} credits under the published cancellation policy.`, action: { type: 'booking_cancelled' } };
+      return {
+        answer: `Booking cancelled. You gave enough notice for a ${Math.round(result.refundPercent * 100)}% refund, so ${result.refund} credits were returned to your account.`,
+        action: { type: 'booking_cancelled' }
+      };
     } catch (err) {
-      return { answer: err instanceof Error && err.message === 'session_cancelled' ? 'That session was cancelled by the coach; the full place fee has already been refunded.' : 'I could not find an active booking for that session.' };
+      if (err instanceof DomainError) return { answer: err.message };
+      console.error(err);
+      return { answer: 'I could not find an active booking for that session.' };
     }
   }
 
-  if (/(credit|balance)/.test(lower)) return user ? { answer: `Your current balance is ${user.credits} credits.` } : { answer: 'Sign in to see a personal credit balance.' };
+  // "My balance" only. A question about somebody else's balance is an
+  // administrator question and is handled further down; matching it here would
+  // answer with the caller's own figure, which is worse than refusing.
+  if (/(credit|balance)/.test(lower) && !(user?.kind === 'admin' && /\b(of|for)\b|@/.test(lower))) {
+    return user
+      ? { answer: `Your current balance is ${user.credits} credits.` }
+      : { answer: 'Sign in to see a personal credit balance.' };
+  }
 
   if (user?.kind === 'coach' && /(attendee|attend|who is|cancelled|repeat)/.test(lower)) {
     const sessionId = sessionIdFrom(message);
     if (!sessionId) return { answer: 'Tell me the session number whose attendance you want to review.' };
     const session = await query<any>('select id, coach_id from session where id = $1', [sessionId]);
     if (!session[0] || session[0].coach_id !== user.id) return { answer: 'I can only show participant-level details for your own sessions.' };
+    // "Who cancelled and who has attended repeatedly" is answered from the
+    // attendance table, not from a booking count: a booking is an intention and
+    // a check-in is what actually happened.
     const attendees = await query<any>(
-      `select p.full_name, e.status,
-              (select count(*) from enrolment e2 where e2.person_id = p.id and e2.status = 'active')::int as active_bookings
-         from enrolment e join person p on p.id = e.person_id where e.session_id = $1 order by e.id`,
-      [sessionId]
+      `select p.full_name, e.status, (c.id is not null) as attended,
+              (select count(*) from check_in c2
+                 join enrolment e2 on e2.id = c2.enrolment_id
+                 join session s2 on s2.id = e2.session_id
+                where e2.person_id = p.id and s2.coach_id = $2)::int as attended_with_you,
+              (select count(*) from enrolment e3
+                 join session s3 on s3.id = e3.session_id
+                where e3.person_id = p.id and s3.coach_id = $2 and e3.status = 'cancelled')::int as cancelled_on_you
+         from enrolment e
+         join person p on p.id = e.person_id
+         left join check_in c on c.enrolment_id = e.id
+        where e.session_id = $1 order by p.full_name`,
+      [sessionId, user.id]
     );
-    return { answer: attendees.length ? `Session ${sessionId} has ${attendees.length} recorded enrolments. ${attendees.map((row) => `${row.full_name} (${row.status})`).join(', ')}.` : 'There are no recorded enrolments for that session.' };
+    if (!attendees.length) return { answer: 'There are no recorded enrolments for that session.' };
+    const lines = attendees.map((row) => {
+      const history = `${row.attended_with_you} attendance(s) and ${row.cancelled_on_you} cancellation(s) with you`;
+      const state = row.status === 'cancelled' ? 'cancelled' : row.attended ? 'attended' : 'booked';
+      return `${row.full_name} — ${state}, ${history}`;
+    });
+    return { answer: `Session ${sessionId} has ${attendees.length} recorded enrolment(s):\n${lines.join('\n')}` };
   }
 
-  if (user?.kind === 'admin' && /(people|users|attendance|overview)/.test(lower)) {
-    const rows = await query<any>(`select kind, count(*)::int as count from person where active = true group by kind order by kind`);
-    return { answer: `The centre currently has ${rows.map((row) => `${row.count} ${row.kind}s`).join(', ')}.` };
+  // An administrator sees everything, so their tools are the same shape as the
+  // others with the ownership predicate removed — not a wider prompt.
+  if (user?.kind === 'admin') {
+    if (sessionId && /(attend|who|detail|enrol|enrol|roster)/.test(lower)) {
+      const rows = await query<any>(
+        `select s.discipline, s.starts_at, s.status, r.name as room_name, r.capacity,
+                coach.full_name as coach_name,
+                p.full_name, p.email, e.status as booking_status,
+                e.credits_charged, e.credits_refunded, (c.id is not null) as attended
+           from session s
+           join room r on r.id = s.room_id
+           join person coach on coach.id = s.coach_id
+           left join enrolment e on e.session_id = s.id
+           left join person p on p.id = e.person_id
+           left join check_in c on c.enrolment_id = e.id
+          where s.id = $1 order by p.full_name`,
+        [sessionId]
+      );
+      if (!rows.length) return { answer: `There is no session ${sessionId}.` };
+      const header = `Session ${sessionId}: ${rows[0].discipline} on ${centreDateTime(rows[0].starts_at)} in ${rows[0].room_name}, taught by ${rows[0].coach_name} (${rows[0].status}).`;
+      const people = rows.filter((row) => row.full_name);
+      if (!people.length) return { answer: `${header} Nobody is enrolled.` };
+      const lines = people.map(
+        (row) =>
+          `${row.full_name} <${row.email}> — ${row.booking_status}` +
+          `${row.attended ? ', attended' : ''}, charged ${row.credits_charged}` +
+          `${Number(row.credits_refunded) > 0 ? `, refunded ${row.credits_refunded}` : ''}`
+      );
+      return { answer: `${header} ${people.length} of ${rows[0].capacity} places:\n${lines.join('\n')}` };
+    }
+
+    const emailMatch = message.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+    if (emailMatch || /(balance|credits) (of|for)/.test(lower)) {
+      const needle = emailMatch ? emailMatch[0] : message.replace(/.*(?:balance|credits)\s+(?:of|for)\s+/i, '').trim();
+      const rows = await query<any>(
+        `select p.id, p.full_name, p.email, p.kind, p.credits, p.active,
+                (select count(*) from enrolment e where e.person_id = p.id and e.status = 'active')::int as active_bookings,
+                (select count(*) from session s where s.coach_id = p.id and s.status <> 'cancelled')::int as sessions_taught
+           from person p
+          where lower(p.email) = lower($1) or p.full_name ilike '%' || $1 || '%'
+          order by p.full_name limit 5`,
+        [needle]
+      );
+      if (!rows.length) return { answer: `I could not find anyone matching “${needle}”.` };
+      return {
+        answer: rows
+          .map(
+            (row) =>
+              `${row.full_name} <${row.email}> — ${row.kind}${row.active ? '' : ', inactive'}, ` +
+              `${row.credits} credits, ${row.active_bookings} active booking(s), ${row.sessions_taught} session(s) taught`
+          )
+          .join('\n')
+      };
+    }
+
+    if (/(people|users|members|overview|stat|how many|summary|centre|center)/.test(lower)) {
+      const [people, sessions, credits] = await Promise.all([
+        query<any>('select kind, count(*)::int as count from person where active = true group by kind order by kind'),
+        query<any>(`select status, count(*)::int as count from session group by status order by status`),
+        query<any>(`select coalesce(sum(credits), 0)::int as held from person where active = true`)
+      ]);
+      const upcoming = await query<any>(
+        `select count(*)::int as sessions,
+                count(distinct e.id) filter (where e.status = 'active')::int as places
+           from session s left join enrolment e on e.session_id = s.id
+          where s.status <> 'cancelled' and s.starts_at >= now() and s.starts_at < now() + interval '7 days'`
+      );
+      const plural = (count: number, kind: string) => `${count} ${kind === 'coach' ? 'coaches' : kind + 's'}`;
+      return {
+        answer:
+          `Active people: ${people.map((row) => plural(row.count, row.kind)).join(', ')}.\n` +
+          `Sessions: ${sessions.map((row) => `${row.count} ${row.status}`).join(', ')}.\n` +
+          `Next 7 days: ${upcoming[0].sessions} session(s) with ${upcoming[0].places} place(s) taken.\n` +
+          `Credits held across active accounts: ${credits[0].held}.`
+      };
+    }
   }
 
-  const discipline = disciplineFrom(message);
-  const sessions = await publicCatalogue(discipline);
-  if (!sessions.length) return { answer: 'There are no upcoming sessions in the next 14 days.' };
+  const discipline = await disciplineFrom(message);
+  // "What has places left?" is a different question from "what is running?", and
+  // the catalogue answers both rather than treating every question as the same.
+  const placesOnly = /\b(place|places|space|spaces|seat|seats|availab|free|left|remaining|open)\b/.test(lower);
+  const sessions = await publicCatalogue(discipline, placesOnly);
+
+  if (!sessions.length) {
+    const nothing = discipline
+      ? `There are no ${discipline} sessions${placesOnly ? ' with places left' : ''} in the next 14 days.`
+      : `There are no upcoming sessions${placesOnly ? ' with places left' : ''} in the next 14 days.`;
+    return { answer: nothing };
+  }
+
+  const shown = sessions.slice(0, 8);
+  const heading =
+    `${sessions.length} ${discipline ? discipline + ' ' : ''}session(s)` +
+    `${placesOnly ? ' with places left' : ''} in the next 14 days. Times are ${CENTRE_TIMEZONE}.`;
+  const more = sessions.length > shown.length ? `\n…and ${sessions.length - shown.length} more.` : '';
+  const next = user
+    ? `\n\nSay “book session ${sessions[0].id}” and I will take the place from your account.`
+    : `\n\nSay “book session ${sessions[0].id}” with your email address and I will create your account and send a password setup link.`;
+
   return {
-    answer: `I found ${sessions.length} upcoming sessions. Ask about a discipline, or say “book session ${sessions[0].id}”${user ? '' : ' with an email address'}.`,
-    sessions: sessions.map((session) => ({ id: session.id, discipline: session.discipline, session_type: session.session_type, starts_at: session.starts_at, ends_at: session.ends_at, room_name: session.room_name, places_remaining: Number(session.places_remaining), seat_fee_credits: session.seat_fee_credits }))
+    answer: `${heading}\n\n${shown.map(catalogueLine).join('\n')}${more}${next}`,
+    sessions: sessions.map((session) => ({
+      id: session.id,
+      discipline: session.discipline,
+      session_type: session.session_type,
+      starts_at: session.starts_at,
+      ends_at: session.ends_at,
+      room_name: session.room_name,
+      capacity: Number(session.capacity),
+      places_remaining: Number(session.places_remaining),
+      seat_fee_credits: session.seat_fee_credits
+    }))
   };
 }
 
